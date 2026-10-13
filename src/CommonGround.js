@@ -41,6 +41,7 @@ import { createSocketConnection, resolveSyncEnabled } from './SocketClient.js';
 import { SyncChannel } from './SyncChannel.js';
 import { StatusChannel } from './StatusChannel.js';
 import { DesktopHud } from './DesktopHud.js';
+import { FPSCounter, resolveFpsCounterEnabled } from './FPSCounter.js';
 
 const DRIFT_POS_THRESHOLD = 0.005; // 5mm
 const DRIFT_ROT_THRESHOLD = 0.01;  // ~0.6 degrees
@@ -125,6 +126,10 @@ export class CommonGround {
         this._desktopHudEnabled = options.desktopHud !== false;
         this._desktopHud = null;
 
+        // FPS counter plane: 'auto' follows admin mode, explicit bool wins
+        this._fpsCounterMode = options.fpsCounter !== undefined ? options.fpsCounter : 'auto';
+        this._fpsCounter = null;
+
         // API endpoints (optional override; defaults keep legacy relative behavior)
         this._apiBase = '/api';
         this._anchorsEndpoint = '/api/anchors';
@@ -139,7 +144,7 @@ export class CommonGround {
      * Configure initial visibility before calling init().
      * Call this before init() to avoid a visible flash.
      */
-    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud } = {}) {
+    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, fpsCounter } = {}) {
         if (roomMesh !== undefined) this._initialConfig.roomMesh = roomMesh;
         if (helpers !== undefined) this._initialConfig.helpers = helpers;
         if (menu !== undefined) this._initialConfig.menu = menu;
@@ -151,6 +156,10 @@ export class CommonGround {
         if (typeof socketPath === 'string' && socketPath.trim()) this._socketPath = socketPath.trim();
         if (clientRole !== undefined) this._clientRole = clientRole;
         if (desktopHud !== undefined) this._desktopHudEnabled = !!desktopHud;
+        if (fpsCounter !== undefined) {
+            this._fpsCounterMode = fpsCounter;
+            this._applyFpsCounterPreference();
+        }
         if (apiBase !== undefined || anchorsEndpoint !== undefined || meshEndpoint !== undefined) {
             this._setApiConfig({ apiBase, anchorsEndpoint, meshEndpoint });
         }
@@ -264,6 +273,9 @@ export class CommonGround {
         this._setupScene();
         this._setupRATK();
         this._setupOcclusion();
+
+        this._fpsCounter = new FPSCounter(this);
+        this._applyFpsCounterPreference();
 
         window.addEventListener('resize', this._onWindowResize.bind(this));
         this._animate();
@@ -522,11 +534,33 @@ export class CommonGround {
         if (this.controllerManager) {
             this.controllerManager._updateRightMenuButtons();
         }
+        this._applyFpsCounterPreference();
         return this._adminModeEnabled;
     }
 
     get adminModeEnabled() {
         return this._adminModeEnabled;
+    }
+
+    /**
+     * Runtime FPS counter switch. An explicit set overrides the 'auto'
+     * (follow admin mode) behavior until reconfigured via
+     * configure({ fpsCounter: 'auto' | true | false }).
+     */
+    setFpsCounterEnabled(enabled) {
+        this._fpsCounterMode = !!enabled;
+        this._applyFpsCounterPreference();
+        return this.getFpsCounterEnabled();
+    }
+
+    getFpsCounterEnabled() {
+        return resolveFpsCounterEnabled(this._fpsCounterMode, this._adminModeEnabled);
+    }
+
+    _applyFpsCounterPreference() {
+        if (this._fpsCounter) {
+            this._fpsCounter.enabled = this.getFpsCounterEnabled();
+        }
     }
 
     // ── Internal setup ──────────────────────────────────────────────────
@@ -1450,6 +1484,11 @@ export class CommonGround {
             && this.vrControlPanel.isVisible()
         ) {
             this.vrControlPanel.updateFpsCounter();
+        }
+
+        // Framework FPS counter plane (enabled per fpsCounter preference)
+        if (this._fpsCounter && this._fpsCounter.enabled) {
+            this._fpsCounter.update(performance.now());
         }
 
         // Debug depth overlay AFTER renderer.render() — raw GL calls and

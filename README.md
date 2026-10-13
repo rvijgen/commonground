@@ -375,6 +375,26 @@ via `sessionLogTitle`, default 'Session Logs'), backed by
 per-session bar chart, and expandable timelines built from any status
 history arrays.
 
+#### FPS counter
+
+`FPSCounter` is a small canvas-texture plane (250 ms sampling) attached to
+the active camera, so it shows both in XR and in the desktop orbit view —
+the desktop counterpart of the DesktopHud living in the same corner of the
+experience. CommonGround drives it from its render loop; no external frame
+bus needed.
+
+Configured via constructor option or `configure({ fpsCounter })` with values
+`true | false | 'auto'` (default `'auto'`): `'auto'` follows admin mode —
+the counter is on while `adminModeEnabled` is true and tracks runtime
+`setAdminModeEnabled()` calls. An explicit `setFpsCounterEnabled(bool)`
+overrides `'auto'` until the next `configure({ fpsCounter })`.
+
+```js
+cg.configure({ fpsCounter: 'auto' });  // follow admin mode (default)
+cg.setFpsCounterEnabled(true);         // explicit runtime override
+cg.getFpsCounterEnabled();             // → effective boolean
+```
+
 ### Scene accessors
 
 - `getCeilingHeight()`: returns the current ceiling height estimate.
