@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, shrink-to-fit=no"
+		/>
+		<title>Commonground (No-Build Dev)</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				margin: 0;
+				line-height: 1.2;
+				background-color: blue;
+			}
+			ul {
+				list-style-type: none;
+				padding: 0;
+			}
+			li {
+				background: #f9f9f9;
+				padding: 5px;
+				margin-bottom: 5px;
+				border-radius: 5px;
+			}
+			strong {
+				font-weight: bold;
+			}
+			#ar-button {
+				background-color: blue;
+				position: absolute;
+				left: 50%;
+				top: 50%;
+				transform: translate(-50%, -50%);
+				width: 300px;
+				height: 50px;
+				border-radius: 25px;
+				border: 2px solid #222;
+				color: #fff;
+				font-size: 1.2em;
+				font-weight: bold;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border-color: white;
+				border-width: 2px;
+				border-style: solid;
+				z-index: 1000;
+			}
+		</style>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/node_modules/three/build/three.module.js",
+					"three/": "/node_modules/three/",
+					"ratk": "/node_modules/ratk/build/ratk.module.js",
+					"troika-three-text": "/node_modules/troika-three-text/dist/troika-three-text.esm.js",
+					"troika-worker-utils": "/node_modules/troika-worker-utils/dist/troika-worker-utils.esm.js",
+					"troika-three-utils": "/node_modules/troika-three-utils/dist/troika-three-utils.esm.js",
+					"webgl-sdf-generator": "/node_modules/webgl-sdf-generator/dist/webgl-sdf-generator.mjs",
+					"bidi-js": "/node_modules/bidi-js/dist/bidi.mjs"
+				}
+			}
+		</script>
+	</head>
+	<body style="margin: 0">
+		<div id="scene-container" style="display: block"></div>
+		<button id="ar-button"></button>
+		<button id="web-launch-button" style="display: none; position: fixed; top: 10px; left: 10px;">OPEN ON META QUEST</button>
+		<script>
+			window.process = window.process || { env: {} };
+			window.process.env = window.process.env || {};
+			if (!window.process.env.VIDEO_URL) {
+				window.process.env.VIDEO_URL = '/test-video';
+			}
+		</script>
+		<script type="module" src="/examples/test-cube/index.js"></script>
+	</body>
+</html>

@@ -1,0 +1,721 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
+
+const ANSI_RESET = '\x1b[0m';
+
+/**
+ * Maps a history of timestamped events to session-relative offsets.
+ * Each event keeps its own fields; `at`/`timestamp`/`sessionMs` is
+ * replaced by `sessionMs` (ms since session start, clamped >= 0).
+ */
+export function toSessionMsEvents(history, sessionStartMs) {
+	if (!Array.isArray(history)) return [];
+	return history.map((event) => {
+		const at = Number(event?.at ?? event?.timestamp ?? event?.sessionMs ?? 0);
+		const offsetMs = Number.isFinite(at) ? Math.max(0, at - sessionStartMs) : 0;
+		const { at: _at, timestamp: _timestamp, ...rest } = (event && typeof event === 'object') ? event : {};
+		return { ...rest, sessionMs: Math.max(0, offsetMs) };
+	});
+}
+
+function fitToWidth(value, width) {
+	const text = String(value);
+	if (text.length <= width) {
+		return text.padEnd(width, ' ');
+	}
+	if (width <= 1) {
+		return text.slice(0, width);
+	}
+	return `${text.slice(0, width - 1)}...`;
+}
+
+function formatDuration(ms) {
+	const safeMs = Math.max(0, Number(ms) || 0);
+	const totalSeconds = Math.floor(safeMs / 1000);
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function getLanIpCandidates() {
+	const interfaces = os.networkInterfaces();
+	const ips = [];
+
+	for (const networkName of Object.keys(interfaces || {})) {
+		const network = interfaces[networkName] || [];
+		for (const details of network) {
+			if (details.family === 'IPv4' && !details.internal) {
+				ips.push(details.address);
+			}
+		}
+	}
+
+	return [...new Set(ips)];
+}
+
+function defaultSummarizeSession({ sessionId, headsetId, connectedAt, immersedAt, endedAtMs, status }) {
+	return {
+		type: 'headset-session-ended',
+		sessionId: sessionId ?? null,
+		headsetId,
+		connectedAt: Number.isFinite(connectedAt) ? new Date(connectedAt).toISOString() : null,
+		immersedAt: Number.isFinite(immersedAt) ? new Date(immersedAt).toISOString() : null,
+		endedAt: new Date(endedAtMs).toISOString(),
+		connectedDurationMs: Number.isFinite(connectedAt) ? Math.max(0, endedAtMs - connectedAt) : null,
+		immersedDurationMs: Number.isFinite(immersedAt) ? Math.max(0, endedAtMs - immersedAt) : null,
+		status,
+	};
+}
+
+function createHelperPage({ pageConfig, host, headsets }) {
+	const safeHost = host || 'localhost';
+	const fillHost = (href) => String(href).replaceAll('{host}', safeHost);
+
+	const quickLinkItems = (pageConfig.links || [])
+		.map((link) => `<li><a href="${fillHost(link.href)}" target="_blank" rel="noopener noreferrer">${link.label}</a></li>`)
+		.join('\n');
+
+	const headsetRows = headsets
+		.map((headset) => {
+			const links = typeof pageConfig.headsetLinks === 'function'
+				? pageConfig.headsetLinks(headset, safeHost)
+				: (pageConfig.headsetLinks || []).map((link) => ({
+					label: String(link.label).replaceAll('{id}', String(headset.id)),
+					href: fillHost(String(link.href).replaceAll('{id}', String(headset.id))),
+				}));
+			const cells = links
+				.map((link) => `<td><a href="${link.href}" target="_blank" rel="noopener noreferrer">${link.label}</a></td>`)
+				.join('\n');
+			return `<tr>${cells}</tr>`;
+		})
+		.join('\n');
+
+	return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${pageConfig.title || 'Headset Launch'}</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #e8f5ff, #f7fff5 45%, #fff9ec);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    main {
+      width: min(760px, 92vw);
+      padding: 24px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+    h1 { margin: 0 0 12px 0; font-size: 28px; }
+    p { margin: 0 0 16px 0; color: #334155; }
+    ul { list-style: none; padding: 0; margin: 0 0 18px 0; display: grid; gap: 12px; }
+    a {
+      display: block;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: #0f172a;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    a:hover { background: #1e293b; }
+    .headsetTable {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 10px;
+      margin: 0;
+    }
+    .headsetTable th,
+    .headsetTable td {
+      text-align: left;
+      vertical-align: middle;
+      padding: 0;
+    }
+    .headsetTable td {
+      padding-left: 6px;
+      padding-right: 6px;
+    }
+    .headsetTable td a {
+      text-align: center;
+    }
+    code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${pageConfig.heading || pageConfig.title || 'Headset Launch'}</h1>
+    <p>${pageConfig.description || ''}</p>
+    <ul>
+      ${quickLinkItems}
+    </ul>
+    <table class="headsetTable" aria-label="Headset launch links">
+      <tbody>
+        ${headsetRows}
+      </tbody>
+    </table>
+    <p style="margin-top:16px;">Host: <code>${safeHost}</code></p>
+  </main>
+</body>
+</html>`;
+}
+
+/**
+ * Runs the terminal dashboard orchestrator: spawns the configured child
+ * server processes, scrapes their log lines, renders an alt-screen status
+ * table, appends NDJSON session summaries, and serves the headset launch
+ * helper page.
+ *
+ * Config:
+ *   title              - dashboard header title
+ *   headsets           - [{ id, label, color }]; color is an ANSI SGR escape
+ *                        string (e.g. '\x1b[38;2;255;73;2m') or null
+ *   columns            - extra status rows: [{ render(status, headset) => string }]
+ *   createDefaultStatus()          - initial per-headset status object
+ *   applyStatusState(status, state, payload) - merge a [status] payload's state
+ *                        into the headset status (default: shallow merge)
+ *   hasEnteredImmersion(state, payload)      - default: Boolean(state.enteredImmersion)
+ *   summarizeSession(ctx)          - custom NDJSON session entry builder;
+ *                        ctx: { sessionId, headsetId, connectedAt, immersedAt, endedAtMs, status }
+ *   processes          - [{ name, command, args?, cwd?, env? }] child servers
+ *                        to spawn (command/args passed to spawn). Optional:
+ *                        in-process mode (no children) feeds the dashboard by
+ *                        wiring a socket relay's onLog to the returned
+ *                        writeLogLine — the same [socket:...]/[status] lines
+ *                        are parsed exactly as if scraped from a child.
+ *   handleSignals      - install SIGINT/SIGTERM handlers (default true);
+ *                        set false when the host process manages its own
+ *                        shutdown (e.g. `commonground serve`)
+ *   sessionLogFile     - NDJSON session log path
+ *   connections        - extra non-headset connection labels to track and
+ *                        display (default ['screen'])
+ *   suppressLogPatterns- strings; matching lines are hidden from recent logs
+ *   logWindowMs        - recent-log window (default 2000)
+ *   refreshMs          - dashboard repaint interval (default 250)
+ *   enabled            - alt-screen TUI on/off (default: QUIET_LOGS=1 and a TTY);
+ *                        when off, child logs pass through to stdout/stderr
+ *   helperPage         - null to disable, or:
+ *                        { port = 80, fallbackPort = 3000, title, heading,
+ *                          description, links: [{ label, href }],
+ *                          headsetLinks: [{ label, href }] | (headset, host) => [{ label, href }] }
+ *                        hrefs may contain {host} and {id} placeholders
+ *
+ * Scraped log-line formats (children must print these to stdout):
+ *   [socket:<label>] connected client <id>     / connected <label>
+ *   [socket:<label>] disconnected client <id>  / disconnected <label>
+ *   [status] {"deviceId": <id>, "action": "...", "state": {...}, "at": <ms>}
+ */
+export function runDashboard(config = {}) {
+	const {
+		title = 'Dashboard',
+		headsets = [],
+		columns = [],
+		createDefaultStatus = () => ({}),
+		applyStatusState = (status, state) => ({ ...status, ...state }),
+		hasEnteredImmersion = (state) => Boolean(state?.enteredImmersion),
+		summarizeSession = null,
+		processes: processConfigs = [],
+		sessionLogFile = path.join(process.cwd(), 'data', 'logs', 'headset-sessions.ndjson'),
+		connections = ['screen'],
+		suppressLogPatterns = [],
+		logWindowMs = Math.max(250, Number(process.env.COMMONGROUND_DASHBOARD_LOG_WINDOW_MS || 2000)),
+		refreshMs = 250,
+		enabled = process.env.QUIET_LOGS === '1' && Boolean(process.stdout.isTTY),
+		helperPage = null,
+		handleSignals = true,
+	} = config;
+
+	const headsetIds = headsets.map((headset) => headset.id);
+	const dashboardState = {
+		headsetConnected: new Map(headsetIds.map((id) => [id, false])),
+		headsetConnectedAt: new Map(headsetIds.map((id) => [id, null])),
+		headsetSessionClosedAt: new Map(headsetIds.map((id) => [id, null])),
+		headsetImmersedAt: new Map(headsetIds.map((id) => [id, null])),
+		headsetSessionId: new Map(headsetIds.map((id) => [id, null])),
+		headsetStatus: new Map(headsetIds.map((id) => [id, createDefaultStatus()])),
+		extraConnections: new Map(connections.map((label) => [label, false])),
+		serverIps: [],
+		recentLogs: [],
+	};
+
+	function readLastSessionIdFromLog() {
+		try {
+			const contents = fs.readFileSync(sessionLogFile, 'utf8');
+			let lastSessionId = 0;
+			for (const line of contents.split('\n')) {
+				const trimmed = line.trim();
+				if (!trimmed) continue;
+				try {
+					const entry = JSON.parse(trimmed);
+					const sessionId = Number(entry?.sessionId);
+					if (Number.isInteger(sessionId) && sessionId > lastSessionId) {
+						lastSessionId = sessionId;
+					}
+				} catch (_error) {
+					// ignore malformed lines
+				}
+			}
+			return lastSessionId;
+		} catch (_error) {
+			return 0;
+		}
+	}
+
+	let nextSessionId = readLastSessionIdFromLog() + 1;
+	let dashboardRefreshTimer = null;
+	let dashboardUsingAltScreen = false;
+
+	function pruneRecentLogs(nowMs = Date.now()) {
+		dashboardState.recentLogs = dashboardState.recentLogs.filter(
+			(entry) => nowMs - entry.at <= logWindowMs
+		);
+	}
+
+	function appendSessionLogEntry(headsetId, endedAtMs) {
+		const connectedAt = dashboardState.headsetConnectedAt.get(headsetId);
+		const immersedAt = dashboardState.headsetImmersedAt.get(headsetId);
+		if (!Number.isFinite(immersedAt)) {
+			return;
+		}
+		const status = dashboardState.headsetStatus.get(headsetId) || createDefaultStatus();
+		const sessionId = dashboardState.headsetSessionId.get(headsetId) ?? null;
+
+		const buildEntry = typeof summarizeSession === 'function' ? summarizeSession : defaultSummarizeSession;
+		const entry = buildEntry({
+			sessionId,
+			headsetId,
+			connectedAt,
+			immersedAt,
+			endedAtMs,
+			sessionStartMs: Number.isFinite(connectedAt) ? connectedAt : endedAtMs,
+			status,
+		});
+		if (entry == null) {
+			return;
+		}
+
+		try {
+			fs.mkdirSync(path.dirname(sessionLogFile), { recursive: true });
+			fs.appendFileSync(sessionLogFile, `${JSON.stringify(entry)}\n`, 'utf8');
+		} catch (error) {
+			process.stderr.write(`[dashboard] Failed to write session log: ${error?.message || error}\n`);
+		}
+	}
+
+	function updateConnectionStatusFromLine(line) {
+		const match = line.match(
+			/\[socket:[^\]]+\]\s+(connected|disconnected)\s+(client\s+(\d+)|(\w+))\b/i
+		);
+		if (!match) {
+			return;
+		}
+
+		const isConnected = match[1].toLowerCase() === 'connected';
+		const headsetId = Number(match[3]);
+		const label = String(match[4] || '').toLowerCase();
+
+		if (Number.isInteger(headsetId) && headsetIds.includes(headsetId)) {
+			const wasConnected = dashboardState.headsetConnected.get(headsetId) === true;
+			const nowMs = Date.now();
+			dashboardState.headsetConnected.set(headsetId, isConnected);
+			if (isConnected && !wasConnected) {
+				dashboardState.headsetConnectedAt.set(headsetId, nowMs);
+				dashboardState.headsetSessionClosedAt.set(headsetId, null);
+			}
+			if (!isConnected) {
+				const sessionClosedAt = dashboardState.headsetSessionClosedAt.get(headsetId);
+				if (wasConnected && !Number.isFinite(sessionClosedAt)) {
+					appendSessionLogEntry(headsetId, nowMs);
+					dashboardState.headsetSessionClosedAt.set(headsetId, nowMs);
+				}
+				dashboardState.headsetConnectedAt.set(headsetId, null);
+				dashboardState.headsetImmersedAt.set(headsetId, null);
+				dashboardState.headsetSessionId.set(headsetId, null);
+				dashboardState.headsetStatus.set(headsetId, createDefaultStatus());
+			}
+			return;
+		}
+
+		if (label && dashboardState.extraConnections.has(label)) {
+			dashboardState.extraConnections.set(label, isConnected);
+		}
+	}
+
+	function updateStatusFromLine(line) {
+		const statusIndex = line.indexOf('[status]');
+		if (statusIndex < 0) {
+			return;
+		}
+
+		const payloadText = line.slice(statusIndex + '[status]'.length).trim();
+		if (!payloadText.startsWith('{')) {
+			return;
+		}
+
+		let payload;
+		try {
+			payload = JSON.parse(payloadText);
+		} catch (_error) {
+			return;
+		}
+
+		const headsetId = Number(payload?.deviceId);
+		if (!Number.isInteger(headsetId) || !headsetIds.includes(headsetId)) {
+			return;
+		}
+
+		const state = payload?.state && typeof payload.state === 'object' ? payload.state : {};
+		const currentStatus = dashboardState.headsetStatus.get(headsetId) || createDefaultStatus();
+		const nextStatus = applyStatusState(currentStatus, state, payload) || currentStatus;
+		dashboardState.headsetStatus.set(headsetId, nextStatus);
+
+		const hasImmersionStartedAt = Number.isFinite(dashboardState.headsetImmersedAt.get(headsetId));
+		if (!hasImmersionStartedAt && hasEnteredImmersion(state, payload)) {
+			const eventAtMs = Number(payload?.at);
+			dashboardState.headsetImmersedAt.set(
+				headsetId,
+				Number.isFinite(eventAtMs) ? eventAtMs : Date.now(),
+			);
+
+			const sessionId = nextSessionId++;
+			dashboardState.headsetSessionId.set(headsetId, sessionId);
+			process.stdout.write(`[dashboard] Session #${sessionId} started for headset ${headsetId}\n`);
+		}
+	}
+
+	function colorizeHeadsetHeader(headset, label) {
+		if (!headset.color) {
+			return label;
+		}
+		return `${headset.color}${label}${ANSI_RESET}`;
+	}
+
+	function renderDashboard() {
+		if (!enabled) {
+			return;
+		}
+
+		pruneRecentLogs();
+
+		const columnCount = Math.max(1, headsets.length);
+		const terminalWidth = Math.max(80, Number(process.stdout.columns || 120));
+		const colWidth = Math.max(12, Math.floor((terminalWidth - (columnCount * 3 - 1) - 4) / columnCount));
+		const tableWidth = (colWidth * columnCount) + (columnCount * 3 - 1) + 4;
+		const timestamp = new Date().toLocaleTimeString();
+		const logWindowSeconds = (logWindowMs / 1000).toFixed(1);
+
+		const statusOf = (headset) => dashboardState.headsetStatus.get(headset.id) || createDefaultStatus();
+
+		const headerLine = headsets
+			.map((headset) => colorizeHeadsetHeader(headset, fitToWidth(headset.label ?? `Headset ${headset.id}`, colWidth)))
+			.join(' | ');
+		const sessionLine = headsets
+			.map((headset) => {
+				const connected = dashboardState.headsetConnected.get(headset.id) === true;
+				if (!connected) return fitToWidth('Session: --:--:--', colWidth);
+				const sessionId = dashboardState.headsetSessionId.get(headset.id);
+				const sessionLabel = Number.isInteger(sessionId) ? `#${sessionId} ` : '';
+				const immersedAt = dashboardState.headsetImmersedAt.get(headset.id);
+				if (!Number.isFinite(immersedAt)) return fitToWidth(`Session: ${sessionLabel}waiting XR`, colWidth);
+				const elapsedMs = Date.now() - immersedAt;
+				return fitToWidth(`Session: ${sessionLabel}${formatDuration(elapsedMs)}`, colWidth);
+			})
+			.join(' | ');
+		const statusLine = headsets
+			.map((headset) => {
+				const connected = dashboardState.headsetConnected.get(headset.id) === true;
+				if (!connected) {
+					return fitToWidth('Not connected', colWidth);
+				}
+				const status = statusOf(headset);
+				return fitToWidth(status.enteredImmersion ? 'Immersed' : 'Connected', colWidth);
+			})
+			.join(' | ');
+		const tableDividerLine = '-'.repeat(Math.max(1, Math.min(tableWidth, terminalWidth - 1)));
+		const columnLines = columns.map((column) => headsets
+			.map((headset) => fitToWidth(column.render(statusOf(headset), headset), colWidth))
+			.join(' | '));
+
+		const connectionLines = [...dashboardState.extraConnections.entries()]
+			.map(([label, connected]) => `${label[0].toUpperCase()}${label.slice(1)}: ${connected ? 'Connected' : 'Not connected'}`);
+		const serverIpLine = fitToWidth(
+			dashboardState.serverIps.length ? `Server IP: ${dashboardState.serverIps.join(', ')}` : 'Server IP: not detected',
+			terminalWidth
+		);
+
+		const logLines = dashboardState.recentLogs
+			.slice(-12)
+			.map((entry) => {
+				const ageSeconds = ((Date.now() - entry.at) / 1000).toFixed(1);
+				return `  [${ageSeconds}s] ${entry.line}`;
+			});
+
+		const lines = [
+			`${title} (${timestamp})`,
+			'',
+			headerLine,
+			sessionLine,
+			statusLine,
+			tableDividerLine,
+			...columnLines,
+			'',
+			...connectionLines,
+			serverIpLine,
+			'',
+			`Recent logs (${logWindowSeconds}s):`,
+			...(logLines.length > 0 ? logLines : ['  (no recent logs)']),
+		];
+
+		process.stdout.write('\x1b[2J\x1b[H');
+		process.stdout.write(lines.join('\n'));
+		process.stdout.write('\n');
+	}
+
+	function enterDashboardScreen() {
+		if (!enabled || !process.stdout.isTTY || dashboardUsingAltScreen) {
+			return;
+		}
+
+		process.stdout.write('\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l');
+		dashboardUsingAltScreen = true;
+	}
+
+	function exitDashboardScreen() {
+		if (!dashboardUsingAltScreen) {
+			return;
+		}
+
+		process.stdout.write('\x1b[?25h\x1b[?1049l');
+		dashboardUsingAltScreen = false;
+	}
+
+	function writeLogLine(line, isError = false) {
+		const normalizedLine = String(line).replace(/\r?\n$/, '');
+		updateConnectionStatusFromLine(normalizedLine);
+		updateStatusFromLine(normalizedLine);
+		if (enabled) {
+			if (suppressLogPatterns.some((pattern) => normalizedLine.includes(pattern))) {
+				return;
+			}
+			dashboardState.recentLogs.push({ at: Date.now(), line: normalizedLine });
+			renderDashboard();
+			return;
+		}
+
+		const stream = isError ? process.stderr : process.stdout;
+		stream.write(`${normalizedLine}\n`);
+	}
+
+	if (enabled) {
+		enterDashboardScreen();
+		dashboardRefreshTimer = setInterval(() => {
+			renderDashboard();
+		}, refreshMs);
+		dashboardRefreshTimer.unref?.();
+	}
+
+	function pipeWithPrefix(stream, prefix) {
+		let buffer = '';
+
+		stream.on('data', (chunk) => {
+			buffer += chunk.toString();
+			const lines = buffer.split(/\r?\n/);
+			buffer = lines.pop() || '';
+
+			for (const line of lines) {
+				writeLogLine(`${prefix} ${line}`);
+			}
+		});
+
+		stream.on('end', () => {
+			if (buffer.length > 0) {
+				writeLogLine(`${prefix} ${buffer}`);
+				buffer = '';
+			}
+		});
+	}
+
+	function startProcess(processConfig) {
+		const args = Array.isArray(processConfig.args) ? processConfig.args : [];
+		const child = spawn(processConfig.command, args, {
+			cwd: processConfig.cwd || process.cwd(),
+			env: processConfig.env || process.env,
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+
+		pipeWithPrefix(child.stdout, `[${processConfig.name}]`);
+		pipeWithPrefix(child.stderr, `[${processConfig.name}]`);
+
+		return child;
+	}
+
+	function startHelperServer() {
+		const preferredPort = Number(helperPage.port ?? 80);
+		const fallbackPort = Number(helperPage.fallbackPort ?? 3000);
+		const portsToTry = Number.isFinite(preferredPort)
+			? [preferredPort, fallbackPort]
+			: [80, fallbackPort];
+
+		const helperServer = http.createServer((req, res) => {
+			const hostHeader = req.headers.host || '';
+			const requestedHost = hostHeader.split(':')[0] || 'localhost';
+			const page = createHelperPage({ pageConfig: helperPage, host: requestedHost, headsets });
+
+			res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+			res.end(page);
+		});
+
+		function listenAtIndex(index) {
+			if (index >= portsToTry.length) {
+				writeLogLine('[helper] Could not start helper page server on any configured port.', true);
+				return;
+			}
+
+			const port = portsToTry[index];
+
+			helperServer.once('error', (error) => {
+				if ((error.code === 'EACCES' || error.code === 'EADDRINUSE') && index + 1 < portsToTry.length) {
+					writeLogLine(
+						`[helper] Port ${port} unavailable (${error.code}), trying ${portsToTry[index + 1]}.`,
+						true
+					);
+					listenAtIndex(index + 1);
+					return;
+				}
+
+				writeLogLine(`[helper] Failed to start helper page: ${error.message}`, true);
+			});
+
+			helperServer.listen(port, '0.0.0.0', () => {
+				const actualPort = helperServer.address() && helperServer.address().port;
+				writeLogLine(`[helper] Permission page running on http://localhost:${actualPort}`);
+				const lanIps = getLanIpCandidates();
+				dashboardState.serverIps = lanIps;
+				for (const ip of lanIps) {
+					writeLogLine(
+						`[helper] Open on Quest: http://${ip}${actualPort === 80 ? '' : `:${actualPort}`}`
+					);
+				}
+			});
+		}
+
+		listenAtIndex(0);
+
+		return helperServer;
+	}
+
+	const helperServer = helperPage ? startHelperServer() : null;
+
+	const processes = processConfigs.map((processConfig) => ({
+		name: processConfig.name,
+		child: startProcess(processConfig),
+		exited: false,
+	}));
+
+	let shuttingDown = false;
+	let exitCode = 0;
+
+	function allExited() {
+		return processes.every((entry) => entry.exited);
+	}
+
+	function shutdown(signal) {
+		if (shuttingDown) {
+			return;
+		}
+
+		shuttingDown = true;
+
+		for (const entry of processes) {
+			if (!entry.exited) {
+				entry.child.kill(signal);
+			}
+		}
+
+		if (helperServer?.listening) {
+			helperServer.close();
+		}
+
+		if (dashboardRefreshTimer) {
+			clearInterval(dashboardRefreshTimer);
+			dashboardRefreshTimer = null;
+		}
+
+		exitDashboardScreen();
+
+		setTimeout(() => {
+			for (const entry of processes) {
+				if (!entry.exited) {
+					entry.child.kill('SIGKILL');
+				}
+			}
+		}, 2000);
+	}
+
+	if (handleSignals) {
+		for (const signal of ['SIGINT', 'SIGTERM']) {
+			process.on(signal, () => shutdown(signal));
+		}
+	}
+
+	for (const entry of processes) {
+		entry.child.on('exit', (code, signal) => {
+			entry.exited = true;
+
+			if (typeof code === 'number' && code !== 0 && exitCode === 0) {
+				exitCode = code;
+			}
+
+			if (!shuttingDown) {
+				shutdown('SIGTERM');
+			}
+
+			if (allExited()) {
+				if (signal && exitCode === 0) {
+					exitDashboardScreen();
+					process.exit(0);
+				}
+				exitDashboardScreen();
+				process.exit(exitCode);
+			}
+		});
+
+		entry.child.on('error', (error) => {
+			entry.exited = true;
+			if (exitCode === 0) {
+				exitCode = 1;
+			}
+
+			writeLogLine(`[${entry.name}] Failed to start: ${error.message}`, true);
+			shutdown('SIGTERM');
+
+			if (allExited()) {
+				exitDashboardScreen();
+				process.exit(exitCode);
+			}
+		});
+	}
+
+	return {
+		processes,
+		helperServer,
+		shutdown,
+		state: dashboardState,
+		writeLogLine,
+	};
+}

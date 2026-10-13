@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>{{SESSION_LOG_TITLE}}</title>
+	<style>
+		:root {
+			--bg: #0b1020;
+			--panel: #121a33;
+			--panel-2: #172245;
+			--text: #e8edf8;
+			--muted: #9fb0d2;
+			--accent: #70d7ff;
+		}
+
+		* { box-sizing: border-box; }
+
+		body {
+			margin: 0;
+			font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+			color: var(--text);
+			background:
+				radial-gradient(1200px 420px at 20% -10%, #2a3c77 0%, transparent 60%),
+				radial-gradient(1000px 420px at 90% 0%, #214f61 0%, transparent 55%),
+				var(--bg);
+		}
+
+		header {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 12px;
+			padding: 16px 18px;
+			position: sticky;
+			top: 0;
+			backdrop-filter: blur(8px);
+			background: rgba(11, 16, 32, 0.7);
+			border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+			z-index: 10;
+		}
+
+		h1 {
+			margin: 0;
+			font-size: 20px;
+			letter-spacing: 0.02em;
+		}
+
+		.controls {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+			flex-wrap: wrap;
+		}
+
+		button, select {
+			background: var(--panel-2);
+			color: var(--text);
+			border: 1px solid rgba(255, 255, 255, 0.15);
+			border-radius: 8px;
+			padding: 8px 10px;
+			font-size: 14px;
+		}
+
+		button { cursor: pointer; }
+
+		main {
+			padding: 14px;
+			display: grid;
+			gap: 12px;
+		}
+
+		.grid {
+			display: grid;
+			grid-template-columns: repeat(4, minmax(140px, 1fr));
+			gap: 10px;
+		}
+
+		.card {
+			background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), var(--panel);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			border-radius: 12px;
+			padding: 10px 12px;
+		}
+
+		.card h2 {
+			margin: 0 0 6px;
+			font-size: 12px;
+			font-weight: 600;
+			color: var(--muted);
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+		}
+
+		.metric {
+			font-size: 24px;
+			font-weight: 700;
+		}
+
+		.panel {
+			background: var(--panel);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			border-radius: 12px;
+			padding: 12px;
+		}
+
+		.panel h3 {
+			margin: 0 0 10px;
+			font-size: 14px;
+			color: var(--muted);
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+		}
+
+		canvas {
+			width: 100%;
+			height: 180px;
+			background: rgba(0, 0, 0, 0.2);
+			border-radius: 10px;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 13px;
+		}
+
+		th, td {
+			text-align: left;
+			padding: 8px;
+			border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+			vertical-align: top;
+		}
+
+		tr.detail-row td {
+			padding: 0;
+			border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		}
+
+		.detail-wrap {
+			padding: 10px 12px;
+			background: rgba(0, 0, 0, 0.2);
+		}
+
+		.timeline-horizontal {
+			position: relative;
+			height: 200px;
+			padding: 24px 10px 16px;
+			overflow-x: auto;
+			overflow-y: hidden;
+		}
+
+		.timeline-legend {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 10px;
+			margin-bottom: 8px;
+			font-size: 11px;
+			color: var(--muted);
+		}
+
+		.timeline-legend-item {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		.timeline-legend-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			border: 2px solid rgba(11, 16, 32, 0.9);
+		}
+
+		.timeline-track {
+			position: relative;
+			height: 100%;
+			min-width: 720px;
+		}
+
+		.timeline-axis {
+			position: absolute;
+			left: 0;
+			right: 0;
+			top: 50%;
+			height: 2px;
+			background: rgba(255, 255, 255, 0.2);
+			transform: translateY(-50%);
+		}
+
+		.timeline-start,
+		.timeline-end {
+			position: absolute;
+			bottom: 0;
+			font-size: 11px;
+			color: var(--muted);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.timeline-start { left: 0; }
+		.timeline-end { right: 0; }
+
+		.timeline-event {
+			position: absolute;
+			transform: translateX(-50%);
+			width: 180px;
+		}
+
+		.timeline-event-dot {
+			position: absolute;
+			left: 50%;
+			top: 0;
+			transform: translate(-50%, -50%);
+			width: 16px;
+			height: 16px;
+			border-radius: 50%;
+			border: 2px solid rgba(11, 16, 32, 0.9);
+			z-index: 2;
+			box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+		}
+
+		.timeline-event-content {
+			position: absolute;
+			left: 50%;
+			bottom: 20px;
+			transform: translateX(-50%);
+			max-width: 180px;
+			padding: 5px 7px;
+			border-radius: 8px;
+			background: rgba(18, 26, 51, 0.96);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			font-size: 11px;
+			line-height: 1.25;
+			opacity: 0;
+			visibility: hidden;
+			pointer-events: none;
+			transition: opacity 120ms ease;
+			z-index: 3;
+		}
+
+		.timeline-event:hover .timeline-event-content {
+			opacity: 1;
+			visibility: visible;
+		}
+
+		.timeline-event-time {
+			color: var(--muted);
+			font-variant-numeric: tabular-nums;
+		}
+
+		.timeline-event-type {
+			font-weight: 600;
+		}
+
+		.timeline-event-message {
+			color: var(--text);
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.expand-btn {
+			padding: 4px 8px;
+			font-size: 12px;
+			border-radius: 6px;
+			background: var(--panel-2);
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			color: var(--text);
+		}
+
+		th { color: var(--muted); font-weight: 600; }
+
+		.badge {
+			display: inline-block;
+			padding: 2px 8px;
+			border-radius: 999px;
+			font-size: 12px;
+			font-weight: 700;
+		}
+
+		.muted { color: var(--muted); }
+		.small { font-size: 12px; }
+
+		@media (max-width: 900px) {
+			.grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<h1>{{SESSION_LOG_TITLE}}</h1>
+		<div class="controls">
+			<select id="headsetFilter" aria-label="Headset filter">
+				<option value="all">All headsets</option>
+			</select>
+			<button id="refreshButton" type="button">Refresh</button>
+			<a href="../../" class="muted small">Back</a>
+		</div>
+	</header>
+	<main>
+		<section class="grid">
+			<div class="card"><h2>Sessions</h2><div class="metric" id="sessionCount">0</div></div>
+			<div class="card"><h2>Total Immersed</h2><div class="metric" id="immersedTotal">00:00:00</div></div>
+			<div class="card"><h2>Avg Session</h2><div class="metric" id="avgSession">00:00</div></div>
+			<div class="card"><h2>Events</h2><div class="metric" id="eventCount">0</div></div>
+		</section>
+
+		<section class="panel">
+			<h3>Immersed Duration by Session</h3>
+			<canvas id="durationChart" width="1200" height="360"></canvas>
+		</section>
+
+		<section class="panel">
+			<h3>Sessions</h3>
+			<table>
+				<thead>
+					<tr>
+						<th>Details</th>
+						<th>Session</th>
+						<th>Ended</th>
+						<th>Headset</th>
+						<th>Immersed</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody id="sessionsBody"></tbody>
+			</table>
+		</section>
+	</main>
+
+	<script>
+		// Served at <prefix>/commonground/logs — the API is a relative sibling.
+		const LOG_URL = 'api/session-logs';
+
+		const EVENT_PALETTE = ['#70d7ff', '#6be6a3', '#ffd374', '#ff8c8c', '#c1a6ff', '#8cc4ff', '#ffb37a', '#7affd4'];
+
+		const ui = {
+			headsetFilter: document.getElementById('headsetFilter'),
+			refreshButton: document.getElementById('refreshButton'),
+			sessionCount: document.getElementById('sessionCount'),
+			immersedTotal: document.getElementById('immersedTotal'),
+			avgSession: document.getElementById('avgSession'),
+			eventCount: document.getElementById('eventCount'),
+			durationChart: document.getElementById('durationChart'),
+			sessionsBody: document.getElementById('sessionsBody'),
+		};
+
+		function parseNdjson(text) {
+			return String(text || '')
+				.split(/\r?\n/)
+				.map((line) => line.trim())
+				.filter((line) => line.length > 0)
+				.map((line) => {
+					try {
+						return JSON.parse(line);
+					} catch (_error) {
+						return null;
+					}
+				})
+				.filter(Boolean);
+		}
+
+		function formatDuration(ms) {
+			const safeMs = Math.max(0, Number(ms) || 0);
+			const totalSec = Math.floor(safeMs / 1000);
+			const h = Math.floor(totalSec / 3600);
+			const m = Math.floor((totalSec % 3600) / 60);
+			const s = totalSec % 60;
+			return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+		}
+
+		function formatShort(ms) {
+			const safeMs = Math.max(0, Number(ms) || 0);
+			const totalSec = Math.floor(safeMs / 1000);
+			const m = Math.floor(totalSec / 60);
+			const s = totalSec % 60;
+			return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+		}
+
+		function escapeHtml(value) {
+			return String(value ?? '')
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
+
+		function stripColorTags(value) {
+			return String(value ?? '').replace(/\[color=[^\]]+\]|\[\/color\]/g, '');
+		}
+
+		function prettifyFieldName(field) {
+			const base = String(field).replace(/History$/, '');
+			const words = base.replace(/([a-z])([A-Z])/g, '$1 $2');
+			return words.charAt(0).toUpperCase() + words.slice(1);
+		}
+
+		function eventMessage(event) {
+			if (event == null || typeof event !== 'object') return String(event ?? 'none');
+			if (event.title != null) return stripColorTags(String(event.title));
+			if (event.message != null) return stripColorTags(String(event.message));
+			const scalars = Object.entries(event)
+				.filter(([key, value]) => key !== 'sessionMs' && value != null && typeof value !== 'object')
+				.map(([key, value]) => `${key}: ${value}`);
+			return scalars.length > 0 ? scalars.join(', ') : 'event';
+		}
+
+		// Any status field that is an array of { sessionMs, ... } events becomes
+		// a timeline series, colored from the palette by field order.
+		function buildTimeline(status) {
+			const series = [];
+			if (!status || typeof status !== 'object') return { events: [], series };
+			for (const [field, value] of Object.entries(status)) {
+				if (!Array.isArray(value) || value.length === 0) continue;
+				if (!value.every((event) => event && typeof event === 'object' && Number.isFinite(Number(event.sessionMs)))) continue;
+				series.push({ type: prettifyFieldName(field), color: EVENT_PALETTE[series.length % EVENT_PALETTE.length], events: value });
+			}
+			const events = series
+				.flatMap((entry) => entry.events.map((event) => ({
+					type: entry.type,
+					color: entry.color,
+					sessionMs: Math.max(0, Number(event.sessionMs) || 0),
+					message: eventMessage(event),
+				})))
+				.sort((a, b) => a.sessionMs - b.sessionMs);
+			return { events, series };
+		}
+
+		function statusSummary(status) {
+			if (!status || typeof status !== 'object') return '-';
+			return Object.entries(status)
+				.filter(([_key, value]) => value == null || typeof value !== 'object')
+				.map(([key, value]) => `${key}: ${value}`)
+				.join(' • ') || '-';
+		}
+
+		function headsetBadge(id, color) {
+			const safe = Number(id);
+			const label = Number.isFinite(safe) ? safe : '?';
+			const badgeColor = color || '#8cc4ff';
+			return `<span class="badge" style="background:${badgeColor}26;color:${badgeColor}">H${label}</span>`;
+		}
+
+		function headsetColor(headsetId, index) {
+			return EVENT_PALETTE[(Math.abs(Number(headsetId) || index) - 1 + EVENT_PALETTE.length) % EVENT_PALETTE.length];
+		}
+
+		function drawChart(canvas, sessions) {
+			const ctx = canvas.getContext('2d');
+			if (!ctx) return;
+			const width = canvas.width;
+			const height = canvas.height;
+			ctx.clearRect(0, 0, width, height);
+			ctx.fillStyle = 'rgba(255,255,255,0.08)';
+			ctx.fillRect(0, height - 1, width, 1);
+
+			if (sessions.length === 0) {
+				ctx.fillStyle = '#9fb0d2';
+				ctx.font = '24px Helvetica';
+				ctx.fillText('No sessions', 20, 40);
+				return;
+			}
+
+			const durations = sessions.map((entry) => Number(entry?.immersedDurationMs) || 0);
+			const max = Math.max(1, ...durations);
+			const gap = 8;
+			const barWidth = Math.max(4, (width - gap * (sessions.length + 1)) / sessions.length);
+
+			sessions.forEach((entry, index) => {
+				const duration = Number(entry?.immersedDurationMs) || 0;
+				const x = gap + index * (barWidth + gap);
+				const h = Math.max(2, Math.round((duration / max) * (height - 40)));
+				const y = height - h - 16;
+				ctx.fillStyle = headsetColor(entry?.headsetId, index + 1);
+				ctx.fillRect(x, y, barWidth, h);
+			});
+		}
+
+		function updateHeadsetFilter(data) {
+			const previous = ui.headsetFilter.value;
+			const ids = [...new Set(data.map((entry) => Number(entry?.headsetId)).filter((id) => Number.isFinite(id)))].sort((a, b) => a - b);
+			ui.headsetFilter.innerHTML = '<option value="all">All headsets</option>'
+				+ ids.map((id) => `<option value="${id}">Headset ${id}</option>`).join('');
+			ui.headsetFilter.value = ids.some((id) => String(id) === previous) ? previous : 'all';
+		}
+
+		function render(data) {
+			const filterValue = ui.headsetFilter.value;
+			const filtered = filterValue === 'all'
+				? data
+				: data.filter((entry) => String(entry?.headsetId) === filterValue);
+
+			const sessionCount = filtered.length;
+			const immersedTotalMs = filtered.reduce((sum, entry) => sum + (Number(entry?.immersedDurationMs) || 0), 0);
+			const avgMs = sessionCount > 0 ? (immersedTotalMs / sessionCount) : 0;
+			const eventTotal = filtered.reduce((sum, entry) => sum + buildTimeline(entry?.status).events.length, 0);
+
+			ui.sessionCount.textContent = String(sessionCount);
+			ui.immersedTotal.textContent = formatDuration(immersedTotalMs);
+			ui.avgSession.textContent = formatShort(avgMs);
+			ui.eventCount.textContent = String(eventTotal);
+
+			drawChart(ui.durationChart, filtered);
+
+			const rows = filtered
+				.slice()
+				.sort((a, b) => new Date(b?.endedAt || 0).getTime() - new Date(a?.endedAt || 0).getTime())
+				.map((entry, index) => {
+					const endedAt = entry?.endedAt ? new Date(entry.endedAt).toLocaleString() : '-';
+					const immersed = formatDuration(Number(entry?.immersedDurationMs) || 0);
+					const timeline = buildTimeline(entry?.status);
+					const maxTimelineMs = Math.max(Number(entry?.immersedDurationMs) || 0, ...timeline.events.map((event) => event.sessionMs), 1);
+					const timelineHtml = timeline.events.length > 0
+						? `<div class="timeline-legend" aria-label="Timeline legend">
+							${timeline.series.map((entry2) => `<div class="timeline-legend-item"><span class="timeline-legend-dot" style="background:${entry2.color}"></span><span>${escapeHtml(entry2.type)}</span></div>`).join('')}
+						</div>
+						<div class="timeline-horizontal">
+							<div class="timeline-track">
+								<div class="timeline-axis"></div>
+								<div class="timeline-start">00:00</div>
+								<div class="timeline-end">${formatShort(maxTimelineMs)}</div>
+								${timeline.events.map((event, eventIndex) => {
+									const leftPct = Math.max(0, Math.min(100, (event.sessionMs / maxTimelineMs) * 100));
+									const axisCenterPx = 80;
+									const laneOffsetsPx = [0, -28, 28, -56];
+									const lane = eventIndex % laneOffsetsPx.length;
+									const top = axisCenterPx + laneOffsetsPx[lane];
+									return `<div class="timeline-event" style="left:${leftPct}%;top:${top}px;" title="${escapeHtml(`${formatShort(event.sessionMs)} • ${event.type} • ${event.message}`)}">
+										<div class="timeline-event-content">
+											<div class="timeline-event-time">${formatShort(event.sessionMs)}</div>
+											<div class="timeline-event-type" style="color:${event.color}">${escapeHtml(event.type)}</div>
+											<div class="timeline-event-message">${escapeHtml(event.message)}</div>
+										</div>
+										<div class="timeline-event-dot" style="background:${event.color}"></div>
+									</div>`;
+								}).join('')}
+							</div>
+						</div>`
+						: '<div class="muted">No timeline events recorded.</div>';
+					const detailId = `timeline-${index}`;
+					const sessionId = entry?.sessionId != null ? String(entry.sessionId) : '-';
+					return `<tr>
+						<td><button class="expand-btn" data-target="${detailId}" type="button">Expand</button></td>
+						<td>${escapeHtml(sessionId)}</td>
+						<td>${endedAt}</td>
+						<td>${headsetBadge(entry?.headsetId, headsetColor(entry?.headsetId, index + 1))}</td>
+						<td>${immersed}</td>
+						<td class="muted small">${escapeHtml(statusSummary(entry?.status))}</td>
+					</tr>
+					<tr id="${detailId}" class="detail-row" style="display:none;">
+						<td colspan="6">
+							<div class="detail-wrap">
+								${timelineHtml}
+							</div>
+						</td>
+					</tr>`;
+				})
+				.join('');
+
+			ui.sessionsBody.innerHTML = rows || '<tr><td colspan="6" class="muted">No sessions found.</td></tr>';
+
+			for (const button of ui.sessionsBody.querySelectorAll('.expand-btn')) {
+				button.addEventListener('click', () => {
+					const targetId = button.getAttribute('data-target');
+					const detailRow = targetId ? document.getElementById(targetId) : null;
+					if (!detailRow) return;
+					const opening = detailRow.style.display === 'none';
+					detailRow.style.display = opening ? 'table-row' : 'none';
+					button.textContent = opening ? 'Collapse' : 'Expand';
+				});
+			}
+		}
+
+		async function loadAndRender() {
+			ui.refreshButton.disabled = true;
+			ui.refreshButton.textContent = 'Loading...';
+			try {
+				const response = await fetch(LOG_URL, { cache: 'no-store' });
+				if (!response.ok) {
+					throw new Error(`Failed to load ${LOG_URL} (${response.status})`);
+				}
+				const text = await response.text();
+				const entries = parseNdjson(text)
+					.filter((entry) => entry?.type === 'headset-session-ended');
+				updateHeadsetFilter(entries);
+				render(entries);
+			} catch (error) {
+				ui.sessionsBody.innerHTML = `<tr><td colspan="6" class="muted">${String(error?.message || error)}</td></tr>`;
+			} finally {
+				ui.refreshButton.disabled = false;
+				ui.refreshButton.textContent = 'Refresh';
+			}
+		}
+
+		ui.headsetFilter.addEventListener('change', loadAndRender);
+		ui.refreshButton.addEventListener('click', loadAndRender);
+		loadAndRender();
+	</script>
+</body>
+</html>
