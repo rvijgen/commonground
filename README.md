@@ -269,8 +269,6 @@ lines directly: `attachSocketRelay(servers, { onLog: dashboard.writeLogLine })`.
 
 The alt-screen TUI is enabled when `QUIET_LOGS=1` and stdout is a TTY;
 otherwise child logs pass through while parsing/session logging stay active.
-CLI entry: `node node_modules/commonground/dashboard/cli.js --config <path>`,
-where the config module default-exports the `runDashboard` config.
 `toSessionMsEvents(history, sessionStartMs)` is exported for building
 session-relative NDJSON histories.
 
