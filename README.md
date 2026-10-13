@@ -64,7 +64,7 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
 - `GET/POST/DELETE /api/anchors` (legacy alias `/anchors`) — persistent anchor references; `?device=N` scopes keys as `device_<id>_<key>`
 - `GET/POST /api/mesh` (legacy alias `/mesh`) — room mesh export
 - `POST /api/roommesh`, `GET /api/roommesh[/:sessionId]` — legacy per-session room meshes
-- `GET /api/client-config` — client runtime config (`{ syncDefault }`)
+- `GET /api/client-config` — client runtime config (`{ syncDefault, headsets: [{ id, label }] }`)
 - `GET /commonground/logs` — integrated session log viewer (HTML)
 - `GET /commonground/api/session-logs` — raw NDJSON session log contents (empty when no sessions yet)
 
@@ -80,6 +80,8 @@ const { app, httpServer, httpsServer, store, listen } = await createServer({
 	httpsPort: 3002,
 	apiAliases: ['/sites/ADRIE/XR'],  // extra prefixes for the anchor/mesh API
 	syncDefault: true,                // client sync participation default (client-config endpoint)
+	headsets: [{ id: 1, label: 'Headset 1' }],  // project headsets for the HUD overview
+	                                    // (DOM-safe fields only; terminal colors stripped)
 	sessionLogFile: '/path/to/data/logs/headset-sessions.ndjson',  // default <dataDir>/logs/...
 	sessionLogTitle: 'Session Logs',  // log viewer page title
 	extraRoutes: (app, { store, spaceId }) => {
@@ -356,6 +358,16 @@ on/off toggle bound to `cg.sync.enabled` and a Session Logs link to the
 server's integrated viewer — that stays out of OrbitControls' way and uses
 relative URLs so subpath-served pages keep working. Disable it with
 `configure({ desktopHud: false })`. VR behavior is unchanged.
+
+When the server's client-config lists project headsets (`headsets` option,
+fed from the dashboard config by the CLI), the HUD gains a collapsible
+headset overview: one row per headset with its anchor status and a Clear
+button. Status comes from `GET api/anchors?device=N` — a headset counts as
+anchored when its device-scoped view has a `scene_anchor`, or a
+`centroid_transform` only (headsets that placed the scene as a whole).
+Clear issues `DELETE api/anchors?device=N` (nulls only that device's keys)
+and refreshes; fetch failures show "unknown" without breaking the HUD. With
+no headsets configured the section hides itself.
 
 The integrated session log viewer lives at `GET /commonground/logs` (title
 via `sessionLogTitle`, default 'Session Logs'), backed by

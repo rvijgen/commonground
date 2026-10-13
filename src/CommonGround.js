@@ -579,11 +579,9 @@ export class CommonGround {
     async _setupARButton() {
         const arButton = document.getElementById('ar-button');
         this.arButton = arButton;
-        const webLaunchButton = document.getElementById('web-launch-button');
 
         if (!navigator.xr) {
             arButton.style.display = 'none';
-            webLaunchButton.style.display = 'none';
             this.isDesktopMode = true;
             const canvas = document.querySelector('canvas');
             if (canvas) canvas.style.display = '';
@@ -596,7 +594,6 @@ export class CommonGround {
             if (!supported) {
                 console.log('AR not supported, desktop mode confirmed');
                 arButton.style.display = 'none';
-                webLaunchButton.style.display = 'none';
                 this.isDesktopMode = true;
             } else {
                 this.isDesktopMode = false;
@@ -608,15 +605,7 @@ export class CommonGround {
             console.log('XR detection failed, assuming desktop mode');
             this.isDesktopMode = true;
             arButton.style.display = 'none';
-            webLaunchButton.style.display = 'none';
         }
-
-        webLaunchButton.onclick = () => {
-            window.open(
-                'https://www.oculus.com/open_url/?url=' +
-                    encodeURIComponent(window.location.href),
-            );
-        };
 
         // Patch requestSession to inject depthSensing options that RATK's
         // ARButton.convertToARButton silently drops.
@@ -646,7 +635,6 @@ export class CommonGround {
             // depthSensing is injected via the requestSession patch above — RATK doesn't forward it from here.
             onUnsupported: () => {
                 arButton.style.display = 'none';
-                webLaunchButton.style.display = 'block';
                 this.isDesktopMode = true;
                 const canvas = document.querySelector('canvas');
                 if (canvas) canvas.style.display = '';

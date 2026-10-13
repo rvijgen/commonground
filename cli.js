@@ -113,6 +113,7 @@ const server = await createServer({
 	httpPort,
 	httpsPort,
 	syncDefault,
+	headsets: config.dashboard && Array.isArray(config.dashboard.headsets) ? config.dashboard.headsets : [],
 	sessionLogFile,
 	sessionLogTitle: config.sessionLogTitle || 'Session Logs',
 	extraRoutes: (app, context) => {

@@ -137,6 +137,10 @@ function withTrailingSlash(paths) {
  *   extraRoutes  - optional (app, { store, spaceId }) => {} for caller routes
  *   syncDefault  - server-provided default for client sync participation,
  *                  exposed at GET <prefix>/api/client-config (default true)
+ *   headsets     - project headsets for the desktop HUD overview, exposed at
+ *                  GET <prefix>/api/client-config as DOM-safe
+ *                  [{ id, label }] (default []; terminal-only fields such as
+ *                  ANSI colors are stripped)
  *   sessionLogFile - NDJSON session log served at
  *                  GET <prefix>/commonground/api/session-logs
  *                  (default <dataDir>/logs/headset-sessions.ndjson)
@@ -163,6 +167,7 @@ export async function createServer(options = {}) {
 		apiAliases = [],
 		extraRoutes = null,
 		syncDefault = true,
+		headsets = [],
 		sessionLogFile = null,
 		sessionLogTitle = 'Session Logs',
 		serveExample = false,
@@ -295,7 +300,15 @@ export async function createServer(options = {}) {
 	const sessionLogViewerPaths = apiPrefixes.flatMap(p => [`${p}/commonground/logs`, `${p}/commonground/logs/`]);
 
 	app.get(clientConfigPaths, (req, res) => {
-		res.json({ syncDefault: syncDefault !== false });
+		res.json({
+			syncDefault: syncDefault !== false,
+			headsets: (Array.isArray(headsets) ? headsets : [])
+				.filter((headset) => headset && headset.id != null)
+				.map((headset) => ({
+					id: headset.id,
+					label: String(headset.label ?? `Headset ${headset.id}`),
+				})),
+		});
 	});
 
 	app.get(sessionLogPaths, async (req, res) => {
