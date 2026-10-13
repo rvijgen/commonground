@@ -34,6 +34,18 @@ export default class Desktop {
   }
 
   /**
+   * Re-center the view on a point, keeping the current camera distance
+   * and viewing angle so the target ends up in the middle of the frame.
+   */
+  focusOn(point) {
+    if (!this.controls) return;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    this.controls.target.copy(point);
+    this.camera.position.copy(point).add(offset);
+    this.controls.update();
+  }
+
+  /**
    * Load room mesh data for desktop viewing
    */
   async loadRoomMeshForDesktop(meshFunctions, scene, roomMeshVisible, isDesktopMode) {

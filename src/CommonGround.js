@@ -1335,11 +1335,12 @@ export class CommonGround {
                 this.refreshOcclusionClearBoxes();
 
                 if (this.desktop && this.desktop.controls) {
-                    this.desktop.controls.target.copy(worldPos);
-                    this.desktop.controls.update();
+                    this.desktop.focusOn(worldPos);
                 }
 
                 console.log('Desktop: restored scene from centroid-relative offset', worldPos);
+            } else if (this.desktop && this.desktop.controls) {
+                this.desktop.focusOn(centroidPos);
             }
 
             const panelOffset = this._anchorValue(anchorRefs, 'control_panel_anchor_transform');
