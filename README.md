@@ -280,8 +280,14 @@ truncated to the terminal width, and the log area is capped to the remaining
 screen rows (overflow is summarized as `... N older log line(s) hidden`).
 Notices such as `[dashboard] Session #N started for headset <id>` go to the
 TUI's recent-log area rather than raw stdout; in non-TUI mode they are
-printed to stdout as before. `toSessionMsEvents(history, sessionStartMs)`
-is exported for building session-relative NDJSON histories.
+printed to stdout as before. `commonground serve` also routes the server's
+own informational lines — listen banners, mount notices, anchor/mesh save
+confirmations — through the same sink (`createServer({ onLog })`), so once
+the alt screen is active nothing writes raw to the terminal; lines emitted
+before the dashboard exists (e.g. app-mount notices) still print to the
+normal screen first. Non-TUI/verbose mode prints everything exactly as
+before. `toSessionMsEvents(history, sessionStartMs)` is exported for
+building session-relative NDJSON histories.
 
 ## Example Usage
 

@@ -7,6 +7,7 @@ import path from 'node:path';
 import https from 'node:https';
 import http from 'node:http';
 import os from 'node:os';
+import { format } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { AnchorStore } from './AnchorStore.js';
 
@@ -131,6 +132,10 @@ function withTrailingSlash(paths) {
  *                  (default env COMMONGROUND_HTTPS_CERT_DIR or <package>/server/.certs)
  *   https        - set false to skip the HTTPS server entirely
  *   quiet        - suppress per-request logging (default env QUIET_LOGS === '1')
+ *   onLog        - sink for informational log lines (listen banners, mount
+ *                  notices, anchor/mesh save confirmations); defaults to
+ *                  console.log. Pass an in-process dashboard's writeLogLine
+ *                  to keep raw writes off its alt-screen TUI.
  *   apiAliases   - extra URL prefixes that also expose the anchor/mesh API,
  *                  e.g. ['/sites/ADRIE/XR'] (default []; '' and '/commonground'
  *                  are always mounted)
@@ -172,17 +177,26 @@ export async function createServer(options = {}) {
 		sessionLogTitle = 'Session Logs',
 		serveExample = false,
 		apps = [],
+		onLog = null,
 	} = options;
 	const resolvedSessionLogFile = sessionLogFile
 		? path.resolve(sessionLogFile)
 		: path.join(dataDir, 'logs', 'headset-sessions.ndjson');
 
+	// Informational lines (listen banners, mount notices, anchor/mesh save
+	// confirmations) go to the onLog sink when provided — an in-process
+	// dashboard uses this to keep raw writes off its alt screen. util.format
+	// keeps multi-argument call sites byte-identical to console.log output.
+	const logInfo = typeof onLog === 'function'
+		? (...args) => onLog(format(...args))
+		: (...args) => console.log(...args);
+
 	installTransientConsoleClear();
 	if (TRANSIENT_LOG_SECONDS > 0) {
 		if (canUseTransientClear()) {
-			console.log(`Transient log clear enabled: ${TRANSIENT_LOG_SECONDS}s (force=${TRANSIENT_LOG_FORCE ? 'on' : 'off'})`);
+			logInfo(`Transient log clear enabled: ${TRANSIENT_LOG_SECONDS}s (force=${TRANSIENT_LOG_FORCE ? 'on' : 'off'})`);
 		} else {
-			console.log('Transient log clear requested but disabled because stdout is not a TTY (set COMMONGROUND_LOG_CLEAR_FORCE=1 to override).');
+			logInfo('Transient log clear requested but disabled because stdout is not a TTY (set COMMONGROUND_LOG_CLEAR_FORCE=1 to override).');
 		}
 	}
 
@@ -221,9 +235,9 @@ export async function createServer(options = {}) {
 		try {
 			const anchors = await store.saveAnchors(req.body || {}, req.query.device);
 			if (req.query.device != null && req.query.device !== '') {
-				console.log(`Anchor references saved to anchors.json for device ${req.query.device} (space: ${store.spaceId})`);
+				logInfo(`Anchor references saved to anchors.json for device ${req.query.device} (space: ${store.spaceId})`);
 			} else {
-				console.log(`Anchor references saved to anchors.json (space: ${store.spaceId})`);
+				logInfo(`Anchor references saved to anchors.json (space: ${store.spaceId})`);
 			}
 			res.json({ success: true, anchors });
 		} catch (error) {
@@ -245,7 +259,7 @@ export async function createServer(options = {}) {
 	app.post(meshPaths, async (req, res) => {
 		try {
 			await store.saveMesh(req.body);
-			console.log(`Room mesh saved to mesh.json (space: ${store.spaceId})`);
+			logInfo(`Room mesh saved to mesh.json (space: ${store.spaceId})`);
 			res.json({ success: true, message: 'Mesh exported to mesh.json' });
 		} catch (error) {
 			console.error('Save error:', error);
@@ -271,7 +285,7 @@ export async function createServer(options = {}) {
 			}
 
 			await store.saveRoomMesh(roomMeshData);
-			console.log(`Room mesh saved: ${roomMeshData.sessionId} (space: ${store.spaceId})`);
+			logInfo(`Room mesh saved: ${roomMeshData.sessionId} (space: ${store.spaceId})`);
 			res.json({ success: true, sessionId: roomMeshData.sessionId });
 		} catch (error) {
 			console.error('Save error:', error);
@@ -350,7 +364,7 @@ export async function createServer(options = {}) {
 				res.sendFile(path.join(staticDir, mounted.indexFile));
 			});
 		}
-		console.log(`Serving app at ${mounted.path} from:`, staticDir);
+		logInfo(`Serving app at ${mounted.path} from:`, staticDir);
 	}
 
 	// The bundled example app (framework development)
@@ -378,9 +392,9 @@ export async function createServer(options = {}) {
 		// Serve the built example from dist/
 		app.use(express.static(distDir));
 
-		console.log('Serving assets from:', path.join(exampleRoot, 'assets'));
-		console.log('Serving source files from:', exampleRoot);
-		console.log('Serving frontend from:', distDir);
+		logInfo('Serving assets from:', path.join(exampleRoot, 'assets'));
+		logInfo('Serving source files from:', exampleRoot);
+		logInfo('Serving frontend from:', distDir);
 	}
 
 	const httpServer = http.createServer(app);
@@ -393,8 +407,8 @@ export async function createServer(options = {}) {
 			httpsServer.certSource = certBundle.source;
 			httpsServer.certPaths = { key: certBundle.keyPath, cert: certBundle.certPath };
 		} catch (error) {
-			console.log('HTTPS server not started (selfsigned module not available):', error.message);
-			console.log('Install selfsigned: npm install selfsigned');
+			logInfo('HTTPS server not started (selfsigned module not available):', error.message);
+			logInfo('Install selfsigned: npm install selfsigned');
 		}
 	}
 
@@ -411,16 +425,16 @@ export async function createServer(options = {}) {
 	function listen() {
 		httpServer.on('error', handleListenError('HTTP', httpPort));
 		httpServer.listen(httpPort, () => {
-			console.log(`CommonGround HTTP server running on port ${httpPort} (space: ${store.spaceId})`);
+			logInfo(`CommonGround HTTP server running on port ${httpPort} (space: ${store.spaceId})`);
 		});
 
 		if (httpsServer) {
 			httpsServer.on('error', handleListenError('HTTPS', httpsPort));
 			httpsServer.listen(httpsPort, () => {
-				console.log(`CommonGround HTTPS server running on port ${httpsPort} (space: ${store.spaceId})`);
-				console.log(`HTTPS certificate loaded from: ${httpsServer.certSource}`);
-				console.log(`Certificate files: ${httpsServer.certPaths.key} and ${httpsServer.certPaths.cert}`);
-				console.log('Note: You may need to accept the self-signed certificate once in your browser');
+				logInfo(`CommonGround HTTPS server running on port ${httpsPort} (space: ${store.spaceId})`);
+				logInfo(`HTTPS certificate loaded from: ${httpsServer.certSource}`);
+				logInfo(`Certificate files: ${httpsServer.certPaths.key} and ${httpsServer.certPaths.cert}`);
+				logInfo('Note: You may need to accept the self-signed certificate once in your browser');
 			});
 		}
 

@@ -103,6 +103,19 @@ const sessionLogFile = config.dashboard && typeof config.dashboard.sessionLogFil
 
 const vendorNodeModulesDir = resolveVendorNodeModulesDir();
 
+let dashboard = null;
+// Informational lines go through the dashboard's log sink once it exists, so
+// nothing writes raw to stdout while its alt screen is active. Lines emitted
+// before the dashboard is created (and all lines when no dashboard is
+// configured) print to stdout exactly as before.
+const logLine = (line) => {
+	if (dashboard) {
+		dashboard.writeLogLine(line);
+		return;
+	}
+	console.log(line);
+};
+
 const routes = Array.isArray(config.routes) ? config.routes : [];
 const staticDirs = Array.isArray(config.staticDirs) ? config.staticDirs : [];
 
@@ -113,6 +126,7 @@ const server = await createServer({
 	httpPort,
 	httpsPort,
 	syncDefault,
+	onLog: logLine,
 	headsets: config.dashboard && Array.isArray(config.dashboard.headsets) ? config.dashboard.headsets : [],
 	sessionLogFile,
 	sessionLogTitle: config.sessionLogTitle || 'Session Logs',
@@ -143,7 +157,6 @@ const server = await createServer({
 	],
 });
 
-let dashboard = null;
 if (config.dashboard && config.dashboard.enabled !== false) {
 	const { enabled: _enabled, processes = [], sessionLogFile: _ignoredSessionLogFile, ...dashboardConfig } = config.dashboard;
 	dashboard = runDashboard({
@@ -171,8 +184,8 @@ if (typeof config.setupRelay === 'function') {
 }
 
 server.listen();
-console.log(`Serving ${cwd} (space: ${server.spaceId})`);
-console.log(`Client library mounts: /commonground/src, /commonground/node_modules (${vendorNodeModulesDir})`);
+logLine(`Serving ${cwd} (space: ${server.spaceId})`);
+logLine(`Client library mounts: /commonground/src, /commonground/node_modules (${vendorNodeModulesDir})`);
 
 let shuttingDown = false;
 function shutdown() {
