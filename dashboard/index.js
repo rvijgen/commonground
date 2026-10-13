@@ -26,10 +26,11 @@ function fitToWidth(value, width) {
 	if (text.length <= width) {
 		return text.padEnd(width, ' ');
 	}
-	if (width <= 1) {
-		return text.slice(0, width);
+	// Truncated output must still fit: slice width - 3 and add the ellipsis.
+	if (width <= 3) {
+		return text.slice(0, Math.max(0, width));
 	}
-	return `${text.slice(0, width - 1)}...`;
+	return `${text.slice(0, width - 3)}...`;
 }
 
 function formatDuration(ms) {
@@ -206,7 +207,13 @@ function createHelperPage({ pageConfig, host, headsets }) {
  *                        display (default ['screen'])
  *   suppressLogPatterns- strings; matching lines are hidden from recent logs
  *   logWindowMs        - recent-log window (default 2000)
- *   refreshMs          - dashboard repaint interval (default 250)
+ *   refreshMs          - dashboard repaint interval (default 250); in TUI mode
+ *                        all repaints happen on this cadence — log lines never
+ *                        trigger a repaint, so event bursts cannot flood the
+ *                        terminal. Frames always fit the visible screen: log
+ *                        lines are truncated to the terminal width and the
+ *                        recent-log area is capped to the remaining rows
+ *                        (overflow shown as "... N older log line(s) hidden")
  *   enabled            - alt-screen TUI on/off (default: QUIET_LOGS=1 and a TTY);
  *                        when off, child logs pass through to stdout/stderr
  *   helperPage         - null to disable, or:
@@ -394,7 +401,7 @@ export function runDashboard(config = {}) {
 
 			const sessionId = nextSessionId++;
 			dashboardState.headsetSessionId.set(headsetId, sessionId);
-			process.stdout.write(`[dashboard] Session #${sessionId} started for headset ${headsetId}\n`);
+			writeLogLine(`[dashboard] Session #${sessionId} started for headset ${headsetId}`);
 		}
 	}
 
@@ -413,7 +420,10 @@ export function runDashboard(config = {}) {
 		pruneRecentLogs();
 
 		const columnCount = Math.max(1, headsets.length);
-		const terminalWidth = Math.max(80, Number(process.stdout.columns || 120));
+		// Respect the real terminal width: padding lines wider than the actual
+		// columns wraps them and makes the frame taller than the screen.
+		const terminalWidth = Math.max(20, Number(process.stdout.columns) || 120);
+		const terminalRows = Math.max(0, Number(process.stdout.rows) || 0);
 		const colWidth = Math.max(12, Math.floor((terminalWidth - (columnCount * 3 - 1) - 4) / columnCount));
 		const tableWidth = (colWidth * columnCount) + (columnCount * 3 - 1) + 4;
 		const timestamp = new Date().toLocaleTimeString();
@@ -462,10 +472,10 @@ export function runDashboard(config = {}) {
 			.slice(-12)
 			.map((entry) => {
 				const ageSeconds = ((Date.now() - entry.at) / 1000).toFixed(1);
-				return `  [${ageSeconds}s] ${entry.line}`;
+				return fitToWidth(`  [${ageSeconds}s] ${entry.line}`, terminalWidth);
 			});
 
-		const lines = [
+		const fixedLines = [
 			`${title} (${timestamp})`,
 			'',
 			headerLine,
@@ -478,12 +488,36 @@ export function runDashboard(config = {}) {
 			serverIpLine,
 			'',
 			`Recent logs (${logWindowSeconds}s):`,
-			...(logLines.length > 0 ? logLines : ['  (no recent logs)']),
 		];
 
-		process.stdout.write('\x1b[2J\x1b[H');
-		process.stdout.write(lines.join('\n'));
-		process.stdout.write('\n');
+		// Keep the whole frame within the visible screen: a frame taller than
+		// the terminal scrolls the alt screen on every repaint, which looks
+		// like frames appending/concatenating. The trailing newline written
+		// after the frame needs one spare row, hence rows - 1.
+		const rowBudget = terminalRows > 0 ? Math.max(0, terminalRows - 1) : Infinity;
+		const visibleLogLines = logLines.length > 0 ? logLines : ['  (no recent logs)'];
+		const availableLogRows = Math.max(0, rowBudget - fixedLines.length);
+		let shownLogLines;
+		if (visibleLogLines.length <= availableLogRows) {
+			shownLogLines = visibleLogLines;
+		} else if (availableLogRows <= 0) {
+			shownLogLines = [];
+		} else if (availableLogRows === 1) {
+			shownLogLines = [fitToWidth(`  ... ${visibleLogLines.length} older log line(s) hidden`, terminalWidth)];
+		} else {
+			const keepCount = availableLogRows - 1;
+			shownLogLines = [
+				fitToWidth(`  ... ${visibleLogLines.length - keepCount} older log line(s) hidden`, terminalWidth),
+				...visibleLogLines.slice(-keepCount),
+			];
+		}
+
+		const lines = [
+			...fixedLines,
+			...shownLogLines,
+		];
+
+		process.stdout.write(`\x1b[2J\x1b[H${lines.join('\n')}\n`);
 	}
 
 	function enterDashboardScreen() {
@@ -513,7 +547,9 @@ export function runDashboard(config = {}) {
 				return;
 			}
 			dashboardState.recentLogs.push({ at: Date.now(), line: normalizedLine });
-			renderDashboard();
+			// No immediate repaint: high-frequency status lines (e.g. per
+			// pointer-move updates) would otherwise trigger a full-screen
+			// rewrite per event. The refresh interval repaints at refreshMs.
 			return;
 		}
 
@@ -523,6 +559,7 @@ export function runDashboard(config = {}) {
 
 	if (enabled) {
 		enterDashboardScreen();
+		renderDashboard();
 		dashboardRefreshTimer = setInterval(() => {
 			renderDashboard();
 		}, refreshMs);

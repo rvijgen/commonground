@@ -271,8 +271,17 @@ lines directly: `attachSocketRelay(servers, { onLog: dashboard.writeLogLine })`.
 
 The alt-screen TUI is enabled when `QUIET_LOGS=1` and stdout is a TTY;
 otherwise child logs pass through while parsing/session logging stay active.
-`toSessionMsEvents(history, sessionStartMs)` is exported for building
-session-relative NDJSON histories.
+
+In TUI mode the frame is the only thing written to the terminal, and it
+always redraws in place: repaints happen only on the `refreshMs` cadence
+(log lines never trigger a repaint, so a burst of status events — e.g.
+per-pointer-move updates — cannot flood the terminal), recent-log lines are
+truncated to the terminal width, and the log area is capped to the remaining
+screen rows (overflow is summarized as `... N older log line(s) hidden`).
+Notices such as `[dashboard] Session #N started for headset <id>` go to the
+TUI's recent-log area rather than raw stdout; in non-TUI mode they are
+printed to stdout as before. `toSessionMsEvents(history, sessionStartMs)`
+is exported for building session-relative NDJSON histories.
 
 ## Example Usage
 
