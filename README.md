@@ -363,10 +363,12 @@ const offEnabled = cg.sync.onEnabledChange((on) => console.log('sync:', on));
 In desktop mode the VR control panel is never shown (it is a VR scene
 placement tool; its callbacks still drive `helpers`/`menu` config). Instead,
 desktop mode gets a small framework-owned DOM overlay top-right — a sync
-on/off toggle bound to `cg.sync.enabled` and a Session Logs link to the
-server's integrated viewer — that stays out of OrbitControls' way and uses
-relative URLs so subpath-served pages keep working. Disable it with
-`configure({ desktopHud: false })`. VR behavior is unchanged.
+on/off toggle bound to `cg.sync.enabled`, a helpers on/off toggle bound to
+`setHelpersVisible()` (the same helper set the VR control panel toggles in
+XR), and a Session Logs link to the server's integrated viewer — that stays
+out of OrbitControls' way and uses relative URLs so subpath-served pages
+keep working. Disable it with `configure({ desktopHud: false })`. VR
+behavior is unchanged.
 
 When the server's client-config lists project headsets (`headsets` option,
 fed from the dashboard config by the CLI), the HUD gains a collapsible
@@ -430,7 +432,8 @@ cg.getFpsCounterEnabled();             // → effective boolean
 ### Visibility helpers
 
 - `setRoomMeshVisible(visible)`: shows or hides detected room mesh content.
-- `setHelpersVisible(visible)`: shows or hides helper objects such as axes, grids, and debug cubes.
+- `setHelpersVisible(visible)`: shows or hides helper objects such as axes, grids, and debug cubes. Also wired to the Helpers checkbox in the desktop HUD.
+- `helpersVisible`: getter for the current helpers visibility state.
 - `setMenuVisible(visible)`: shows or hides the VR control panel when XR mode is active.
 
 ### Properties

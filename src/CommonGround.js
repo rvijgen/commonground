@@ -76,6 +76,7 @@ export class CommonGround {
         this.roomMeshVisible = true;
         this.sessionstarted = false;
         this._adminModeEnabled = false;
+        this._helpersVisible = true;
 
         // Drift compensation
         this.planesInScene = new Group();
@@ -516,9 +517,14 @@ export class CommonGround {
 
     /** Show/hide helpers (red cube, wireframe plane, axes, ceiling grid, plane outlines, centerCube) */
     setHelpersVisible(visible) {
+        this._helpersVisible = Boolean(visible);
         if (this.vrControlPanel && this.vrControlPanel.callbacks) {
-            this.vrControlPanel.callbacks.toggleHelpers(visible);
+            this.vrControlPanel.callbacks.toggleHelpers(this._helpersVisible);
         }
+    }
+
+    get helpersVisible() {
+        return this._helpersVisible;
     }
 
     /** Show/hide the VR control panel (no-op in desktop mode) */
@@ -784,11 +790,7 @@ export class CommonGround {
     _applyInitialConfig() {
         const { roomMesh, helpers, menu } = this._initialConfig;
         if (!roomMesh) this.setRoomMeshVisible(false);
-        if (!helpers) {
-            if (this.vrControlPanel && this.vrControlPanel.callbacks) {
-                this.vrControlPanel.callbacks.toggleHelpers(false);
-            }
-        }
+        this.setHelpersVisible(Boolean(helpers));
         if (!menu && !this.isDesktopMode) {
             this.vrControlPanel.setVisible(false, true);
         }
@@ -965,7 +967,7 @@ export class CommonGround {
         }
 
         // Apply helpers visibility now that centerCube and planesInScene exist
-        if (!this._initialConfig.helpers) {
+        if (!this._helpersVisible) {
             this.centerCube.visible = false;
             this.planesInScene.visible = false;
         }

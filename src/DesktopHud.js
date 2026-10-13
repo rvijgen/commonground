@@ -16,11 +16,13 @@ export function anchorStatusFromScopedView(view) {
  * keeps working, only the widgets themselves are interactive.
  *
  * Contents: a sync on/off toggle bound to cg.sync.enabled (runtime switch,
- * no reload), a Session Logs link to the server's integrated log viewer,
- * and — when the server's client-config lists project headsets — a
- * collapsible headset overview with per-headset anchor status (from
- * GET api/anchors?device=N) and a Clear button (DELETE api/anchors?device=N).
- * All URLs are relative so pages served at a subpath keep working.
+ * no reload), a helpers on/off toggle bound to cg.setHelpersVisible (same
+ * helper set the VR control panel toggles in XR), a Session Logs link to
+ * the server's integrated log viewer, and — when the server's client-config
+ * lists project headsets — a collapsible headset overview with per-headset
+ * anchor status (from GET api/anchors?device=N) and a Clear button
+ * (DELETE api/anchors?device=N). All URLs are relative so pages served at
+ * a subpath keep working.
  */
 export class DesktopHud {
 	constructor(cg, { logsUrl = 'commonground/logs', doc, fetchImpl } = {}) {
@@ -91,6 +93,19 @@ export class DesktopHud {
 		syncText.textContent = 'Sync';
 		syncLabel.appendChild(syncText);
 
+		const helpersLabel = doc.createElement('label');
+		helpersLabel.style.cssText = 'display:flex;align-items:center;gap:4px;cursor:pointer;pointer-events:auto;';
+		const helpersCheckbox = doc.createElement('input');
+		helpersCheckbox.type = 'checkbox';
+		helpersCheckbox.checked = this._cg.helpersVisible;
+		helpersCheckbox.addEventListener('change', () => {
+			this._cg.setHelpersVisible(helpersCheckbox.checked);
+		});
+		helpersLabel.appendChild(helpersCheckbox);
+		const helpersText = doc.createElement('span');
+		helpersText.textContent = 'Helpers';
+		helpersLabel.appendChild(helpersText);
+
 		const logsLink = doc.createElement('a');
 		logsLink.textContent = 'Session Logs';
 		logsLink.href = this._logsUrl;
@@ -106,6 +121,7 @@ export class DesktopHud {
 		headsetsButton.addEventListener('click', () => this._toggleHeadsetsPanel());
 
 		container.appendChild(syncLabel);
+		container.appendChild(helpersLabel);
 		container.appendChild(logsLink);
 		container.appendChild(headsetsButton);
 		doc.body.appendChild(container);
