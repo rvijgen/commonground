@@ -432,7 +432,7 @@ cg.getFpsCounterEnabled();             // → effective boolean
 ### Visibility helpers
 
 - `setRoomMeshVisible(visible)`: shows or hides detected room mesh content.
-- `setHelpersVisible(visible)`: shows or hides helper objects such as axes, grids, and debug cubes. Also wired to the Helpers checkbox in the desktop HUD.
+- `setHelpersVisible(visible)`: shows or hides helper objects such as axes, grids, and debug cubes. Also wired to the Helpers checkbox in the desktop HUD. Helpers start hidden by default; pass `configure({ helpers: true })` to show them at startup.
 - `helpersVisible`: getter for the current helpers visibility state.
 - `setMenuVisible(visible)`: shows or hides the VR control panel when XR mode is active.
 

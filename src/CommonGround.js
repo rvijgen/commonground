@@ -76,7 +76,7 @@ export class CommonGround {
         this.roomMeshVisible = true;
         this.sessionstarted = false;
         this._adminModeEnabled = false;
-        this._helpersVisible = true;
+        this._helpersVisible = false;
 
         // Drift compensation
         this.planesInScene = new Group();
@@ -138,7 +138,7 @@ export class CommonGround {
         this._setApiConfig(options);
 
         // Initial visibility config (applied before first render)
-        this._initialConfig = { roomMesh: true, helpers: true, menu: true, occlusion: false, occlusionMode: 'prepass' };
+        this._initialConfig = { roomMesh: true, helpers: false, menu: true, occlusion: false, occlusionMode: 'prepass' };
     }
 
     /**
@@ -147,7 +147,12 @@ export class CommonGround {
      */
     configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, fpsCounter } = {}) {
         if (roomMesh !== undefined) this._initialConfig.roomMesh = roomMesh;
-        if (helpers !== undefined) this._initialConfig.helpers = helpers;
+        if (helpers !== undefined) {
+            this._initialConfig.helpers = helpers;
+            // Keep runtime state in sync pre-init: the desktop HUD reads
+            // helpersVisible before _applyInitialConfig() runs.
+            this._helpersVisible = Boolean(helpers);
+        }
         if (menu !== undefined) this._initialConfig.menu = menu;
         if (occlusion !== undefined) this._occlusionEnabled = !!occlusion;
         if (occlusionMode !== undefined) this._occlusionMode = occlusionMode;
