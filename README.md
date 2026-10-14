@@ -481,6 +481,15 @@ via `sessionLogTitle`, default 'Session Logs'), backed by
 per-session bar chart, and expandable timelines built from any status
 history arrays.
 
+#### Desktop reference figure
+
+Desktop mode also loads a bundled human figure (`assets/user1.fbx`, served
+at `/commonground/assets/`) and stands it at the scene origin as a
+human-scale orientation cue. Figures taller than 10 raw units are assumed
+to be exported in centimeters and scaled to meters. Configure with the
+constructor option or `configure({ desktopFigure })`: `false` disables it,
+a string overrides the URL (default `'commonground/assets/user1.fbx'`).
+
 #### FPS counter
 
 `FPSCounter` is a small canvas-texture plane (250 ms sampling) attached to

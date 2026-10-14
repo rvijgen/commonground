@@ -160,6 +160,8 @@ const server = await createServer({
 		// No-build import-map mounts for the commonground client library.
 		{ path: '/commonground/src', staticDir: path.join(PACKAGE_ROOT, 'src') },
 		{ path: '/commonground/node_modules', staticDir: vendorNodeModulesDir },
+		// Bundled assets (desktop reference figure, …).
+		{ path: '/commonground/assets', staticDir: path.join(PACKAGE_ROOT, 'assets') },
 		// The app itself.
 		{ path: '/', staticDir: cwd },
 		...staticDirs

@@ -1,3 +1,4 @@
+import { Box3, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export default class Desktop {
@@ -56,6 +57,31 @@ export default class Desktop {
       return geometries;
     } catch (error) {
     //   console.log('No room mesh data available for desktop viewing:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Load a reference figure (default: bundled user1.fbx) and stand it at
+   * the scene origin, so the desktop view has a human-scale orientation
+   * cue at its center. FBX exports are often in centimeters: a figure
+   * taller than 10 raw units is assumed to be cm and scaled to meters.
+   */
+  async loadReferenceFigure(scene, url) {
+    try {
+      const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
+      const figure = await new FBXLoader().loadAsync(url);
+      const rawHeight = new Box3().setFromObject(figure).getSize(new Vector3()).y;
+      if (rawHeight > 10) figure.scale.setScalar(0.01);
+      scene.add(figure);
+      const box = new Box3().setFromObject(figure);
+      const center = box.getCenter(new Vector3());
+      figure.position.x -= center.x;
+      figure.position.z -= center.z;
+      figure.position.y -= box.min.y;
+      return figure;
+    } catch (error) {
+      console.warn('Desktop reference figure failed to load:', error);
       return null;
     }
   }

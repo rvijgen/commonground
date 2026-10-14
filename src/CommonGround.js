@@ -127,6 +127,12 @@ export class CommonGround {
         this._desktopHudEnabled = options.desktopHud !== false;
         this._desktopHud = null;
 
+        // Desktop reference figure at the scene origin: bundled FBX by
+        // default, false disables, a string overrides the URL.
+        this._desktopFigureUrl = options.desktopFigure === false
+            ? null
+            : (typeof options.desktopFigure === 'string' ? options.desktopFigure : 'commonground/assets/user1.fbx');
+
         // FPS counter plane: 'auto' follows admin mode, explicit bool wins
         this._fpsCounterMode = options.fpsCounter !== undefined ? options.fpsCounter : 'auto';
         this._fpsCounter = null;
@@ -145,7 +151,7 @@ export class CommonGround {
      * Configure initial visibility before calling init().
      * Call this before init() to avoid a visible flash.
      */
-    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, fpsCounter } = {}) {
+    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, desktopFigure, fpsCounter } = {}) {
         if (roomMesh !== undefined) this._initialConfig.roomMesh = roomMesh;
         if (helpers !== undefined) {
             this._initialConfig.helpers = helpers;
@@ -162,6 +168,11 @@ export class CommonGround {
         if (typeof socketPath === 'string' && socketPath.trim()) this._socketPath = socketPath.trim();
         if (clientRole !== undefined) this._clientRole = clientRole;
         if (desktopHud !== undefined) this._desktopHudEnabled = !!desktopHud;
+        if (desktopFigure !== undefined) {
+            this._desktopFigureUrl = desktopFigure === false
+                ? null
+                : (typeof desktopFigure === 'string' ? desktopFigure : 'commonground/assets/user1.fbx');
+        }
         if (fpsCounter !== undefined) {
             this._fpsCounterMode = fpsCounter;
             this._applyFpsCounterPreference();
@@ -726,6 +737,9 @@ export class CommonGround {
                     this._detectDesktopCeilingHeight(geometries);
                     this._restoreDesktopFromServer();
                 });
+            if (this._desktopFigureUrl) {
+                this.desktop.loadReferenceFigure(this.scene, this._desktopFigureUrl);
+            }
         }
 
         if (navigator.xr) {
