@@ -408,6 +408,15 @@ export class CommonGround {
     onSessionStart(fn) { this._onSessionStart = fn; }
 
     /**
+     * Re-frame the desktop orbit camera so the whole scene fits the view.
+     * Runs automatically once initial content loads; apps with late-loading
+     * content can call it again afterwards. No-op outside desktop mode.
+     */
+    frameDesktopView(options) {
+        if (this.isDesktopMode) this.desktop?.frameScene(this.scene, options);
+    }
+
+    /**
      * Register a depth overlay that receives update(frame, referenceSpace)
      * each frame before renderer.render().
      */
@@ -760,8 +769,11 @@ export class CommonGround {
             this.desktop.loadRoomMeshForDesktop(this.meshFunctions, this.scene, this.roomMeshVisible, this.isDesktopMode)
                 .then((geometries) => {
                     this._detectDesktopCeilingHeight(geometries);
-                    this._restoreDesktopFromServer();
-                });
+                    return this._restoreDesktopFromServer();
+                })
+                // Initial content is in: pull the camera back far enough
+                // to show the entire scene instead of a close-up.
+                .then(() => this.desktop.frameScene(this.scene));
             if (this._desktopFigureUrl) {
                 this.desktop.loadReferenceFigure(this.scene, this._desktopFigureUrl);
             }
@@ -1376,7 +1388,7 @@ export class CommonGround {
     _restoreDesktopFromServer() {
         console.log('Desktop: restoring positions from server...');
 
-        this._getAnchorReferencesFromServer().then((anchorRefs) => {
+        return this._getAnchorReferencesFromServer().then((anchorRefs) => {
             const savedCentroid = this._anchorValue(anchorRefs, 'centroid_transform');
             if (!savedCentroid?.position || !savedCentroid?.quaternion) {
                 console.warn('Desktop: no saved centroid on server, cannot restore');

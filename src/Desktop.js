@@ -47,6 +47,33 @@ export default class Desktop {
   }
 
   /**
+   * Frame the whole scene: aim the orbit target at the scene's bounding
+   * box center and pull the camera back (along the current view
+   * direction) far enough for the box to fit both FOV axes. Raises
+   * maxDistance when the fit needs more than the default zoom range.
+   */
+  frameScene(scene, { padding = 1.25 } = {}) {
+    if (!this.controls || !scene) return;
+    const box = new Box3().setFromObject(scene);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (!Number.isFinite(maxDim) || maxDim <= 0) return;
+    const verticalFov = (this.camera.fov * Math.PI) / 180;
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * (this.camera.aspect || 1));
+    const fitFov = Math.min(verticalFov, horizontalFov);
+    const distance = ((maxDim / 2) / Math.tan(fitFov / 2)) * padding;
+    const direction = this.camera.position.clone().sub(this.controls.target);
+    if (direction.lengthSq() === 0) direction.set(1, 0.6, 1);
+    direction.normalize();
+    this.controls.target.copy(center);
+    this.camera.position.copy(center).addScaledVector(direction, distance);
+    this.controls.maxDistance = Math.max(this.controls.maxDistance, distance * 1.5);
+    this.controls.update();
+  }
+
+  /**
    * Load room mesh data for desktop viewing
    */
   async loadRoomMeshForDesktop(meshFunctions, scene, roomMeshVisible, isDesktopMode) {
