@@ -71,8 +71,10 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
   immersedAt, immersedDurationMs (null until immersion enter), status
   (merged cg:status state or null), columns: string[] (only when columns
   are configured), anchor: 'anchored' | 'no-anchor' | 'unknown' }]`.
-  Presence and immersion come from the socket relay (handshake deviceId);
-  anchor state refers to the currently selected space.
+  Presence and immersion come from the socket relay (handshake deviceId —
+  headset pages only; desktop pages deliberately connect without a
+  deviceId, so spectators never show up as headsets); anchor state refers
+  to the currently selected space.
 - `GET /api/spaces` — `{ current, spaces: string[] }` (subdirs of
   `<dataDir>/spaces/`, always including the current space)
 - `POST /api/spaces` `{ name }` — create a space (1–64 chars: letters,
