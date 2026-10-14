@@ -161,6 +161,12 @@ if (config.dashboard && config.dashboard.enabled !== false) {
 	const { enabled: _enabled, processes = [], sessionLogFile: _ignoredSessionLogFile, ...dashboardConfig } = config.dashboard;
 	dashboard = runDashboard({
 		sessionLogFile,
+		// Injected app knowledge the dashboard cannot see on its own: the
+		// app's HTTPS port (default helper-page links) and the top-level
+		// project routes (labeled ones become helper-page quick links).
+		// A project's dashboard section may still override either.
+		appHttpsPort: httpsPort,
+		appRoutes: routes,
 		...dashboardConfig,
 		processes,
 		handleSignals: false,

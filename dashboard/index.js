@@ -72,6 +72,138 @@ function defaultSummarizeSession({ sessionId, headsetId, connectedAt, immersedAt
 	};
 }
 
+/**
+ * statusFields schema — a project declares its dashboard status shape once
+ * and the framework derives the default status and the session-log entry:
+ *
+ *   {
+ *     introductionStep: 'number',        // scalar: 'number' | 'boolean' | 'string'
+ *     lastFloorplanHex: 'number?',       // nullable scalar ('number?' | 'string?')
+ *     tileGrabHistory: [{ title: 'string' }],  // event array: one-element
+ *                                          // array = entry schema
+ *   }
+ *
+ * Derived default status: number → 0, boolean → false, string → 'none',
+ * nullable → null, event array → []. The derived default also carries
+ * `lastAction: 'none'` — the conventional client-stamped field of cg.status
+ * updates — so dashboards can render it from the first frame.
+ */
+const SCALAR_STATUS_DEFAULTS = { number: 0, boolean: false, string: 'none' };
+
+function isNullableFieldType(type) {
+	return typeof type === 'string' && type.endsWith('?');
+}
+
+function baseFieldType(type) {
+	return isNullableFieldType(type) ? type.slice(0, -1) : type;
+}
+
+function isPlainFieldSpec(spec) {
+	return typeof spec === 'string';
+}
+
+/**
+ * Builds a fresh default status object from a statusFields declaration.
+ */
+export function createStatusFromFields(statusFields) {
+	const status = {};
+	const fields = statusFields && typeof statusFields === 'object' ? statusFields : {};
+	for (const [key, spec] of Object.entries(fields)) {
+		if (Array.isArray(spec)) {
+			status[key] = [];
+		} else if (isNullableFieldType(spec)) {
+			status[key] = null;
+		} else {
+			status[key] = SCALAR_STATUS_DEFAULTS[baseFieldType(spec)] ?? 'none';
+		}
+	}
+	status.lastAction = 'none';
+	return status;
+}
+
+// Session-entry coercion for top-level scalars: string → trimmed 'none'
+// fallback, boolean → Boolean(v), number → finite number or 0, nullable →
+// null for null/undefined else coerced ('number?' → integer-or-null,
+// 'string?' → trimmed-or-null).
+function coerceSessionScalar(value, spec) {
+	if (isNullableFieldType(spec) && value == null) {
+		return null;
+	}
+	switch (baseFieldType(spec)) {
+		case 'number':
+			if (isNullableFieldType(spec)) {
+				return Number.isInteger(Number(value)) ? Number(value) : null;
+			}
+			return Number.isFinite(Number(value)) ? Number(value) : 0;
+		case 'boolean':
+			return Boolean(value);
+		default: {
+			if (isNullableFieldType(spec)) {
+				return String(value).trim() || null;
+			}
+			return String(value ?? 'none').trim() || 'none';
+		}
+	}
+}
+
+// Same coercions for event-array entries, except plain numbers clamp like a
+// count: Math.max(0, Number(v) || 0).
+function coerceHistoryEntryValue(value, spec) {
+	if (isNullableFieldType(spec) && value == null) {
+		return null;
+	}
+	switch (baseFieldType(spec)) {
+		case 'number':
+			if (isNullableFieldType(spec)) {
+				return Number.isInteger(Number(value)) ? Number(value) : null;
+			}
+			return Math.max(0, Number(value) || 0);
+		case 'boolean':
+			return Boolean(value);
+		default: {
+			if (isNullableFieldType(spec)) {
+				return String(value).trim() || null;
+			}
+			return String(value ?? 'none').trim() || 'none';
+		}
+	}
+}
+
+/**
+ * Builds a summarizeSession(ctx) hook from a statusFields declaration.
+ * The entry always carries the standard envelope (type, sessionId,
+ * headsetId, ISO connectedAt/immersedAt/endedAt, durations); the `status`
+ * section holds exactly the declared fields — scalars coerced per type,
+ * event arrays mapped through toSessionMsEvents with each entry normalized
+ * to exactly the declared entry fields (declared order) plus sessionMs.
+ */
+export function summarizeSessionFromFields(statusFields) {
+	const fields = statusFields && typeof statusFields === 'object' ? statusFields : {};
+	return (ctx) => {
+		const status = ctx?.status && typeof ctx.status === 'object' ? ctx.status : {};
+		const section = {};
+		for (const [key, spec] of Object.entries(fields)) {
+			if (Array.isArray(spec)) {
+				const entrySchema = spec[0] && typeof spec[0] === 'object' ? spec[0] : {};
+				const history = Array.isArray(status[key]) ? status[key] : [];
+				section[key] = toSessionMsEvents(history, ctx?.sessionStartMs).map((event) => {
+					const entry = {};
+					for (const [entryKey, entrySpec] of Object.entries(entrySchema)) {
+						if (!isPlainFieldSpec(entrySpec)) continue;
+						entry[entryKey] = coerceHistoryEntryValue(event?.[entryKey], entrySpec);
+					}
+					entry.sessionMs = event.sessionMs;
+					return entry;
+				});
+			} else if (isPlainFieldSpec(spec)) {
+				section[key] = coerceSessionScalar(status[key], spec);
+			}
+		}
+		return defaultSummarizeSession({ ...ctx, status: section });
+	};
+}
+
+
 function createHelperPage({ pageConfig, host, headsets }) {
 	const safeHost = host || 'localhost';
 	const fillHost = (href) => String(href).replaceAll('{host}', safeHost);
@@ -187,12 +319,18 @@ function createHelperPage({ pageConfig, host, headsets }) {
  *   headsets           - [{ id, label, color }]; color is an ANSI SGR escape
  *                        string (e.g. '\x1b[38;2;255;73;2m') or null
  *   columns            - extra status rows: [{ render(status, headset) => string }]
+ *   statusFields       - declarative status shape (see createStatusFromFields);
+ *                        derives the default status and the session-log entry
+ *                        unless the hooks below are provided explicitly
  *   createDefaultStatus()          - initial per-headset status object
+ *                        (default: derived from statusFields, else () => ({}))
  *   applyStatusState(status, state, payload) - merge a [status] payload's state
  *                        into the headset status (default: shallow merge)
  *   hasEnteredImmersion(state, payload)      - default: Boolean(state.enteredImmersion)
  *   summarizeSession(ctx)          - custom NDJSON session entry builder;
  *                        ctx: { sessionId, headsetId, connectedAt, immersedAt, endedAtMs, status }
+ *                        (default: derived from statusFields, else the generic
+ *                        envelope with the raw final status)
  *   processes          - [{ name, command, args?, cwd?, env? }] child servers
  *                        to spawn (command/args passed to spawn). Optional:
  *                        in-process mode (no children) feeds the dashboard by
@@ -216,11 +354,21 @@ function createHelperPage({ pageConfig, host, headsets }) {
  *                        (overflow shown as "... N older log line(s) hidden")
  *   enabled            - alt-screen TUI on/off (default: QUIET_LOGS=1 and a TTY);
  *                        when off, child logs pass through to stdout/stderr
- *   helperPage         - null to disable, or:
+ *   appHttpsPort       - the app's HTTPS port; injected by `commonground serve`
+ *                        and used to build default helper-page links
+ *   appRoutes          - top-level project routes [{ path, file, label? }];
+ *                        routes with a `label` become helper-page quick links
+ *   helperPage         - null to disable; true or {} for a fully generated
+ *                        page, or:
  *                        { port = 80, fallbackPort = 3000, title, heading,
  *                          description, links: [{ label, href }],
  *                          headsetLinks: [{ label, href }] | (headset, host) => [{ label, href }] }
- *                        hrefs may contain {host} and {id} placeholders
+ *                        hrefs may contain {host} and {id} placeholders.
+ *                        Without links/headsetLinks, defaults are generated:
+ *                        CommonGround (/api/anchors), one link per labeled
+ *                        appRoute, Session Logs (/commonground/logs), Desktop
+ *                        (/), and per-headset 'Headset {id}' / 'Headset {id}
+ *                        Admin' links — all against https://{host}:appHttpsPort.
  *
  * Scraped log-line formats (children must print these to stdout):
  *   [socket:<label>] connected client <id>     / connected <label>
@@ -232,7 +380,8 @@ export function runDashboard(config = {}) {
 		title = 'Dashboard',
 		headsets = [],
 		columns = [],
-		createDefaultStatus = () => ({}),
+		statusFields = null,
+		createDefaultStatus = null,
 		applyStatusState = (status, state) => ({ ...status, ...state }),
 		hasEnteredImmersion = (state) => Boolean(state?.enteredImmersion),
 		summarizeSession = null,
@@ -243,9 +392,23 @@ export function runDashboard(config = {}) {
 		logWindowMs = Math.max(250, Number(process.env.COMMONGROUND_DASHBOARD_LOG_WINDOW_MS || 2000)),
 		refreshMs = 250,
 		enabled = process.env.QUIET_LOGS === '1' && Boolean(process.stdout.isTTY),
+		appHttpsPort = null,
+		appRoutes = [],
 		helperPage = null,
 		handleSignals = true,
 	} = config;
+
+	// Explicit hooks win; otherwise derive from statusFields; otherwise the
+	// generic defaults (empty status, envelope with raw final status).
+	const hasStatusFields = Boolean(statusFields)
+		&& typeof statusFields === 'object'
+		&& Object.keys(statusFields).length > 0;
+	const createDefault = typeof createDefaultStatus === 'function'
+		? createDefaultStatus
+		: (hasStatusFields ? () => createStatusFromFields(statusFields) : () => ({}));
+	const buildSessionEntry = typeof summarizeSession === 'function'
+		? summarizeSession
+		: (hasStatusFields ? summarizeSessionFromFields(statusFields) : defaultSummarizeSession);
 
 	const headsetIds = headsets.map((headset) => headset.id);
 	const dashboardState = {
@@ -254,7 +417,7 @@ export function runDashboard(config = {}) {
 		headsetSessionClosedAt: new Map(headsetIds.map((id) => [id, null])),
 		headsetImmersedAt: new Map(headsetIds.map((id) => [id, null])),
 		headsetSessionId: new Map(headsetIds.map((id) => [id, null])),
-		headsetStatus: new Map(headsetIds.map((id) => [id, createDefaultStatus()])),
+		headsetStatus: new Map(headsetIds.map((id) => [id, createDefault()])),
 		extraConnections: new Map(connections.map((label) => [label, false])),
 		serverIps: [],
 		recentLogs: [],
@@ -299,11 +462,10 @@ export function runDashboard(config = {}) {
 		if (!Number.isFinite(immersedAt)) {
 			return;
 		}
-		const status = dashboardState.headsetStatus.get(headsetId) || createDefaultStatus();
+		const status = dashboardState.headsetStatus.get(headsetId) || createDefault();
 		const sessionId = dashboardState.headsetSessionId.get(headsetId) ?? null;
 
-		const buildEntry = typeof summarizeSession === 'function' ? summarizeSession : defaultSummarizeSession;
-		const entry = buildEntry({
+		const entry = buildSessionEntry({
 			sessionId,
 			headsetId,
 			connectedAt,
@@ -353,7 +515,7 @@ export function runDashboard(config = {}) {
 				dashboardState.headsetConnectedAt.set(headsetId, null);
 				dashboardState.headsetImmersedAt.set(headsetId, null);
 				dashboardState.headsetSessionId.set(headsetId, null);
-				dashboardState.headsetStatus.set(headsetId, createDefaultStatus());
+				dashboardState.headsetStatus.set(headsetId, createDefault());
 			}
 			return;
 		}
@@ -387,7 +549,7 @@ export function runDashboard(config = {}) {
 		}
 
 		const state = payload?.state && typeof payload.state === 'object' ? payload.state : {};
-		const currentStatus = dashboardState.headsetStatus.get(headsetId) || createDefaultStatus();
+		const currentStatus = dashboardState.headsetStatus.get(headsetId) || createDefault();
 		const nextStatus = applyStatusState(currentStatus, state, payload) || currentStatus;
 		dashboardState.headsetStatus.set(headsetId, nextStatus);
 
@@ -429,7 +591,7 @@ export function runDashboard(config = {}) {
 		const timestamp = new Date().toLocaleTimeString();
 		const logWindowSeconds = (logWindowMs / 1000).toFixed(1);
 
-		const statusOf = (headset) => dashboardState.headsetStatus.get(headset.id) || createDefaultStatus();
+		const statusOf = (headset) => dashboardState.headsetStatus.get(headset.id) || createDefault();
 
 		const headerLine = headsets
 			.map((headset) => colorizeHeadsetHeader(headset, fitToWidth(headset.label ?? `Headset ${headset.id}`, colWidth)))
@@ -601,9 +763,9 @@ export function runDashboard(config = {}) {
 		return child;
 	}
 
-	function startHelperServer() {
-		const preferredPort = Number(helperPage.port ?? 80);
-		const fallbackPort = Number(helperPage.fallbackPort ?? 3000);
+	function startHelperServer(resolvedPage) {
+		const preferredPort = Number(resolvedPage.port ?? 80);
+		const fallbackPort = Number(resolvedPage.fallbackPort ?? 3000);
 		const portsToTry = Number.isFinite(preferredPort)
 			? [preferredPort, fallbackPort]
 			: [80, fallbackPort];
@@ -611,7 +773,7 @@ export function runDashboard(config = {}) {
 		const helperServer = http.createServer((req, res) => {
 			const hostHeader = req.headers.host || '';
 			const requestedHost = hostHeader.split(':')[0] || 'localhost';
-			const page = createHelperPage({ pageConfig: helperPage, host: requestedHost, headsets });
+			const page = createHelperPage({ pageConfig: resolvedPage, host: requestedHost, headsets });
 
 			res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
 			res.end(page);
@@ -656,7 +818,49 @@ export function runDashboard(config = {}) {
 		return helperServer;
 	}
 
-	const helperServer = helperPage ? startHelperServer() : null;
+	// Default helper-page links, derived from the app's HTTPS port and the
+	// labeled top-level project routes. Empty when no appHttpsPort is known
+	// (e.g. standalone classic-mode dashboards).
+	function helperBaseUrl() {
+		const port = Number(appHttpsPort);
+		return Number.isFinite(port) && port > 0 ? `https://{host}:${port}` : null;
+	}
+
+	function defaultHelperLinks() {
+		const base = helperBaseUrl();
+		if (!base) return [];
+		const routeLinks = (Array.isArray(appRoutes) ? appRoutes : [])
+			.filter((route) => route && route.path && typeof route.label === 'string' && route.label.trim())
+			.map((route) => ({ label: String(route.label).trim(), href: `${base}${route.path}` }));
+		return [
+			{ label: 'CommonGround', href: `${base}/api/anchors` },
+			...routeLinks,
+			{ label: 'Session Logs', href: `${base}/commonground/logs` },
+			{ label: 'Desktop', href: `${base}/` },
+		];
+	}
+
+	function defaultHelperHeadsetLinks() {
+		const base = helperBaseUrl();
+		if (!base) return [];
+		return [
+			{ label: 'Headset {id}', href: `${base}?deviceid={id}` },
+			{ label: 'Headset {id} Admin', href: `${base}?deviceid={id}&admin=1` },
+		];
+	}
+
+	function resolveHelperPage(pageConfig) {
+		if (!pageConfig) return null;
+		const base = pageConfig === true ? {} : pageConfig;
+		return {
+			...base,
+			links: Array.isArray(base.links) ? base.links : defaultHelperLinks(),
+			headsetLinks: base.headsetLinks !== undefined ? base.headsetLinks : defaultHelperHeadsetLinks(),
+		};
+	}
+
+	const resolvedHelperPage = resolveHelperPage(helperPage);
+	const helperServer = resolvedHelperPage ? startHelperServer(resolvedHelperPage) : null;
 
 	const processes = processConfigs.map((processConfig) => ({
 		name: processConfig.name,

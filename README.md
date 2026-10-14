@@ -196,7 +196,7 @@ export default {
 	status: true,                     // built-in cg:status channel
 	syncDefault: true,                // client sync participation default (--sync/--no-sync override)
 	sessionLogTitle: 'Session Logs',  // title of the /commonground/logs viewer
-	routes: [{ path: '/screen', file: 'screen.html' }],
+	routes: [{ path: '/screen', file: 'screen.html', label: 'Screen' }],  // label → helper-page quick link
 	staticDirs: [{ path: '/assets', dir: 'public/assets', indexFile: null }],
 	extraRoutes: (app, { store, spaceId }) => {},  // escape hatch
 	setupRelay: (relay) => {},                     // escape hatch (registerRelayEvents etc.)
@@ -204,17 +204,25 @@ export default {
 		enabled: true,
 		headsets: [{ id: 1, label: 'Headset 1', color: '\x1b[38;2;255;73;2m' }],
 		columns: [{ render: (status, headset) => `...` }],
-		createDefaultStatus: () => ({ enteredImmersion: false }),
+		statusFields: {                 // declares the status shape once; derives
+			introductionStep: 'number',           // the default status and the
+			enteredImmersion: 'boolean',          // session-log entry (see below)
+			lastTileDraggedTitle: 'string',
+			lastFloorplanHex: 'number?',          // nullable
+			tileGrabHistory: [{ title: 'string' }],  // event array: entry schema
+		},
+		createDefaultStatus: null,      // optional override (derived from statusFields)
 		applyStatusState: (status, state, payload) => ({ ...status, ...state }),
 		hasEnteredImmersion: (state) => Boolean(state.enteredImmersion),
-		summarizeSession: null,         // optional custom NDJSON entry builder
+		summarizeSession: null,         // optional override (derived from statusFields)
 		sessionLogFile: 'data/logs/headset-sessions.ndjson',
-		helperPage: {
-			port: 80, fallbackPort: 3000,
-			title: 'Quest Links', heading: 'Headset Launch', description: '...',
-			links: [{ label: 'Screen', href: 'https://{host}:3002/screen' }],
-			headsetLinks: [{ label: 'Headset {id}', href: 'https://{host}:3002?deviceid={id}' }],
-		},
+		helperPage: {},                 // fully generated page; or override:
+		// helperPage: {
+		// 	port: 80, fallbackPort: 3000,
+		// 	title: 'Quest Links', heading: 'Headset Launch', description: '...',
+		// 	links: [{ label: 'Screen', href: 'https://{host}:3002/screen' }],
+		// 	headsetLinks: [{ label: 'Headset {id}', href: 'https://{host}:3002?deviceid={id}' }],
+		// },
 	},
 };
 ```
@@ -222,7 +230,53 @@ export default {
 With `dashboard` present, server and dashboard run in ONE process: the
 relay's structured log lines feed the dashboard directly (`onLog`), no child
 processes or stdout scraping involved. Session NDJSON logging, the helper
-page, and the alt-screen TUI (when `QUIET_LOGS=1` and a TTY) all work.
+page, and the alt-screen TUI (when `QUIET_LOGS=1` and a TTY) all work. The
+CLI also injects two things the dashboard cannot know on its own —
+`appHttpsPort` (the serve HTTPS port) and `appRoutes` (the top-level
+`routes`) — used to generate the default helper-page links; a project's
+dashboard section may override both.
+
+### Status fields (`statusFields`)
+
+Declare the project's status shape once; the framework derives both the
+default status and the session-log entry from it. Field types: `'number'`,
+`'boolean'`, `'string'`, nullable `'number?'`/`'string?'`, and event arrays
+written as a one-element array holding the entry schema
+(`[{ title: 'string', box: 'string' }]`).
+
+Derived default status: number → `0`, boolean → `false`, string → `'none'`,
+nullable → `null`, event array → `[]`. The derived default also carries
+`lastAction: 'none'` (the conventional client-stamped field of cg.status
+updates). Derived session entry: always the standard envelope
+(`type: 'headset-session-ended'`, `sessionId`, `headsetId`, ISO
+`connectedAt`/`immersedAt`/`endedAt`, `connectedDurationMs`,
+`immersedDurationMs`) plus a `status` section with exactly the declared
+fields — scalars coerced per type (string → trimmed `'none'` fallback;
+boolean → `!!v`; number → finite-or-`0`; nullable → `null` for
+null/undefined, else integer-or-`null` / trimmed-or-`null`), event arrays
+mapped through `toSessionMsEvents` with each entry normalized to exactly the
+declared entry fields (declared order) plus `sessionMs`.
+
+Override hierarchy: an explicit `createDefaultStatus` / `summarizeSession`
+hook always wins over the derived version; without `statusFields` the
+framework falls back to an empty default status and the generic envelope
+with the raw final status. `columns` is unaffected. The derived builders are
+exported as `createStatusFromFields(statusFields)` and
+`summarizeSessionFromFields(statusFields)` for projects that want to wrap
+them.
+
+### Helper page defaults
+
+With `helperPage: {}` (or `true`) the launch page is fully generated:
+`CommonGround` → `/api/anchors` (certificate accept), one quick link per
+top-level route that has a `label` (routes without `label` are skipped),
+`Session Logs` → `/commonground/logs`, `Desktop` → `/`, and per-headset
+`Headset {id}` / `Headset {id} Admin` links (`?deviceid={id}[&admin=1]`) —
+all against `https://{host}:<appHttpsPort>`. `port`/`fallbackPort` and the
+cosmetic `title`/`heading`/`description` keep their meaning; explicit
+`links`/`headsetLinks` replace the generated lists entirely. Without an
+`appHttpsPort` (standalone classic-mode dashboards) the generated lists are
+empty.
 
 ### Dashboard
 
