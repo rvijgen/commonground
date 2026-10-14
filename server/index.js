@@ -354,11 +354,14 @@ export async function createServer(options = {}) {
 			const presence = relay?.presence?.get?.(deviceId) ?? null;
 			const connected = Boolean(presence);
 			const state = relay?.coreStatus?.get?.(deviceId) ?? null;
+			const immersedAt = relay?.immersion?.get?.(deviceId) ?? null;
 			const entry = {
 				id: headset.id,
 				label: String(headset.label ?? `Headset ${headset.id}`),
 				connected,
 				connectedDurationMs: connected ? Math.max(0, Date.now() - presence.connectedAt) : null,
+				immersedAt,
+				immersedDurationMs: immersedAt != null ? Math.max(0, Date.now() - immersedAt) : null,
 				status: state && typeof state === 'object' ? state : null,
 				anchor: await store.getAnchorStatus(deviceId),
 			};

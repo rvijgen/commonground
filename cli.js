@@ -199,6 +199,11 @@ relay = attachSocketRelay(
 		sync: config.sync !== false,
 		status: config.status !== false,
 		onLog: dashboard ? (line) => dashboard.writeLogLine(line) : undefined,
+		// Same immersion predicate as the CLI dashboard, so relay-tracked
+		// immersion times (api/headsets, desktop HUD) match the TUI.
+		...(typeof dashboardSection.hasEnteredImmersion === 'function'
+			? { hasEnteredImmersion: dashboardSection.hasEnteredImmersion }
+			: {}),
 	},
 );
 

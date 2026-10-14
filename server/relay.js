@@ -101,6 +101,7 @@ export function attachSocketRelay(servers, options = {}) {
 		sync = true,
 		status = true,
 		onLog = null,
+		hasEnteredImmersion = (state) => Boolean(state?.enteredImmersion),
 	} = options;
 
 	const ioServers = [];
@@ -112,6 +113,10 @@ export function attachSocketRelay(servers, options = {}) {
 	// sockets is connected (e.g. headset page + admin page share a deviceId).
 	// Screen-role clients carry no deviceId and are never tracked.
 	const presenceByDeviceId = new Map();
+	// Immersion: deviceId → timestamp of the first cg:status update whose
+	// merged state satisfies hasEnteredImmersion. Session-scoped like
+	// presence: cleared when the device's last socket disconnects.
+	const immersedAtByDeviceId = new Map();
 	let nextClientOrdinal = 1;
 	const statusChannels = [];
 	const coreStatusStates = new Map();
@@ -178,10 +183,14 @@ export function attachSocketRelay(servers, options = {}) {
 			const deviceId = parseDeviceIdQuery(socket?.handshake?.query ?? {});
 			const current = deviceId != null ? (coreStatusStates.get(deviceId) ?? {}) : {};
 			const next = { ...current, ...partial };
+			const at = Date.now();
 			if (deviceId != null) {
 				coreStatusStates.set(deviceId, next);
+				if (!immersedAtByDeviceId.has(deviceId) && hasEnteredImmersion(next)) {
+					immersedAtByDeviceId.set(deviceId, at);
+				}
 			}
-			const summary = { deviceId, state: next, at: Date.now() };
+			const summary = { deviceId, state: next, at };
 			logLine(`[status] ${JSON.stringify(summary)}`);
 			broadcast('cg:status', summary);
 		});
@@ -308,6 +317,10 @@ export function attachSocketRelay(servers, options = {}) {
 						channel.entries.delete(disconnectedDeviceId);
 					}
 					coreStatusStates.delete(disconnectedDeviceId);
+					// Immersion ends with the socket, like the CLI dashboard's
+					// session end on disconnect — a reloading page must not
+					// keep the previous session's immersion timestamp.
+					immersedAtByDeviceId.delete(disconnectedDeviceId);
 					const presence = presenceByDeviceId.get(disconnectedDeviceId);
 					if (presence) {
 						presence.socketIds.delete(socket.id);
@@ -344,6 +357,11 @@ export function attachSocketRelay(servers, options = {}) {
 				return entry ? { connectedAt: entry.connectedAt } : null;
 			},
 			keys: () => [...presenceByDeviceId.keys()],
+		},
+		// Immersion start timestamp per device (first cg:status whose merged
+		// state satisfies hasEnteredImmersion), null while not immersed.
+		immersion: {
+			get: (deviceId) => immersedAtByDeviceId.get(Number(deviceId)) ?? null,
 		},
 		coreStatus: {
 			entries: coreStatusStates,

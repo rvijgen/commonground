@@ -67,10 +67,11 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
 - `GET /api/client-config` — client runtime config (`{ syncDefault, headsets: [{ id, label }] }`)
 - `GET /api/headsets` — live per-headset overview for the desktop HUD:
   `[{ id, label, connected, connectedDurationMs (null when disconnected),
-  status (merged cg:status state or null), columns: string[] (only when
-  columns are configured), anchor: 'anchored' | 'no-anchor' | 'unknown' }]`.
-  Presence comes from the socket relay (handshake deviceId); anchor state
-  refers to the currently selected space.
+  immersedAt, immersedDurationMs (null until immersion enter), status
+  (merged cg:status state or null), columns: string[] (only when columns
+  are configured), anchor: 'anchored' | 'no-anchor' | 'unknown' }]`.
+  Presence and immersion come from the socket relay (handshake deviceId);
+  anchor state refers to the currently selected space.
 - `GET /api/spaces` — `{ current, spaces: string[] }` (subdirs of
   `<dataDir>/spaces/`, always including the current space)
 - `POST /api/spaces` `{ name }` — create a space (1–64 chars: letters,
@@ -156,6 +157,8 @@ const relay = attachSocketRelay(
 		status: true,          // built-in cg:status channel
 		onLog: (line) => {},   // sink for structured lines ([socket:...]/[status]...);
 		                       // pass dashboard.writeLogLine for in-process dashboards
+		hasEnteredImmersion: (state) => Boolean(state?.enteredImmersion),  // default;
+		                       // marks relay.immersion when the merged state first passes
 	},
 );
 
@@ -163,6 +166,7 @@ relay.coreStatus.get(3); // -> merged cg:status state for device 3 (null after d
 relay.presence.get(3);   // -> { connectedAt } while device 3 is connected, else null
 relay.presence.keys();   // -> currently connected deviceIds (handshake deviceId;
                          //    multiple sockets per device ref-count; screens untracked)
+relay.immersion.get(3);  // -> immersion-enter timestamp (ms) for device 3, else null
 
 // Declarative validate -> log -> broadcast event relay (custom protocols)
 relay.registerRelayEvents([{
@@ -457,13 +461,14 @@ subpath-served pages keep working. Disable it with
 `configure({ desktopHud: false })`. VR behavior is unchanged.
 
 - **Headsets** (default): one card per project headset with presence +
-  ticking session time, the dashboard `columns` strings rendered as lines
+  ticking session time (starts on immersion enter, like the CLI dashboard),
+  the dashboard `columns` strings rendered as lines
   (falling back to raw `status key: value` when no columns are configured),
   the anchor state of the currently selected space, and a Clear button
   (`DELETE api/anchors?device=N`). Data comes from `GET api/headsets`
-  (polled ~2s, plus refreshes on `cg.status` updates); presence and the
-  merged status come from the socket relay (`relay.presence` /
-  `relay.coreStatus`).
+  (polled ~2s, plus refreshes on `cg.status` updates); presence, immersion
+  and the merged status come from the socket relay (`relay.presence` /
+  `relay.immersion` / `relay.coreStatus`).
 - **Spaces**: the current space, a Select button per existing space, and an
   add-new-space row (`GET/POST api/spaces`, `POST api/spaces/select`).
   Selecting a space re-points the server's AnchorStore at

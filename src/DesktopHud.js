@@ -42,7 +42,8 @@ function truncateText(value, maxLength = 80) {
  * working, only the widgets themselves are interactive.
  *
  *   Headsets — one card per headset from GET api/headsets: presence +
- *              session time (ticking), the dashboard column strings (or raw
+ *              session time (ticking; starts on immersion enter, matching
+ *              the CLI dashboard), the dashboard column strings (or raw
  *              status key: value when the project configures no columns),
  *              the anchor state of the currently selected space, and a Clear
  *              button (DELETE api/anchors?device=N). Refreshed by polling
@@ -318,8 +319,10 @@ export class DesktopHud {
 	_updateCardTime(headset) {
 		const card = this._headsetCards.get(headset.id);
 		if (!card) return;
-		if (headset.connected === true && Number.isFinite(headset.connectedDurationMs)) {
-			const elapsed = headset.connectedDurationMs + Math.max(0, Date.now() - this._headsetsFetchedAt);
+		// The session clock starts on immersion enter, same as the CLI
+		// dashboard — connected-but-not-immersed shows the placeholder.
+		if (headset.connected === true && Number.isFinite(headset.immersedDurationMs)) {
+			const elapsed = headset.immersedDurationMs + Math.max(0, Date.now() - this._headsetsFetchedAt);
 			card.timeEl.textContent = `Session: ${formatDurationMs(elapsed)}`;
 		} else {
 			card.timeEl.textContent = 'Session: --:--:--';
