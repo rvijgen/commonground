@@ -197,7 +197,11 @@ export function attachSocketRelay(servers, options = {}) {
 				}
 			}
 			const summary = { deviceId, state: next, at };
-			logLine(`[status] ${JSON.stringify(summary)}`);
+			// Device-less clients (desktop pages) carry no deviceId: nothing
+			// to attribute the state to, so don't feed the dashboard log.
+			if (deviceId != null) {
+				logLine(`[status] ${JSON.stringify(summary)}`);
+			}
 			broadcast('cg:status', summary);
 		});
 	}

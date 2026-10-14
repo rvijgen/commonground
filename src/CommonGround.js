@@ -116,6 +116,14 @@ export class CommonGround {
         console.log('[CommonGround] deviceId:', this._deviceId);
         this._buttonText = 'ENTER COMMONGROUND';
 
+        // Resolved by _setupARButton() once isDesktopMode is final. The
+        // socket handshake waits for this: desktop pages connect WITHOUT a
+        // deviceId so they never register headset presence/status — a
+        // desktop spectator is not a headset, even when the URL carries
+        // ?deviceid= (helper-page links) or the legacy default 1 applies.
+        this._modeKnownResolve = null;
+        this._whenModeKnown = new Promise((resolve) => { this._modeKnownResolve = resolve; });
+
         // Cross-headset channels (socket.io, lazily connected same-origin)
         this._socketPath = typeof options.socketPath === 'string' ? options.socketPath : '/socket.io/';
         this._clientRole = options.clientRole ?? null;
@@ -197,11 +205,16 @@ export class CommonGround {
      */
     _ensureSocketConnection() {
         if (!this._socketConnectionPromise) {
-            this._socketConnectionPromise = createSocketConnection({
-                socketPath: this._socketPath,
-                deviceId: this._deviceId,
-                clientRole: this._clientRole,
-            });
+            // Wait for display-mode detection (_setupARButton during init):
+            // only actual headsets put their deviceId in the handshake.
+            // Apps that never call init() never resolve this — they render
+            // nothing and have no use for the socket.
+            this._socketConnectionPromise = this._whenModeKnown
+                .then(() => createSocketConnection({
+                    socketPath: this._socketPath,
+                    deviceId: this.isDesktopMode ? null : this._deviceId,
+                    clientRole: this._clientRole,
+                }));
         }
         return this._socketConnectionPromise;
     }
@@ -664,6 +677,7 @@ export class CommonGround {
             const canvas = document.querySelector('canvas');
             if (canvas) canvas.style.display = '';
             console.log('Desktop mode detected (no navigator.xr)');
+            this._modeKnownResolve?.();
             return;
         }
 
@@ -684,6 +698,7 @@ export class CommonGround {
             this.isDesktopMode = true;
             arButton.style.display = 'none';
         }
+        this._modeKnownResolve?.();
 
         // Patch requestSession to inject depthSensing options that RATK's
         // ARButton.convertToARButton silently drops.

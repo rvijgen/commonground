@@ -83,6 +83,10 @@ export async function resolveSyncEnabled({ search, fetchImpl } = {}) {
  * Lazily loads the socket.io client script from the same origin
  * (<socketPath>socket.io.js) and opens a connection. Resolves to null when
  * sockets are unavailable, so apps can run standalone without a server.
+ *
+ * deviceId semantics: an explicit null means "no device" (desktop pages —
+ * no URL fallback, so spectators never register headset presence);
+ * undefined falls back to the page URL's ?deviceid= param.
  */
 export async function createSocketConnection({ socketPath = DEFAULT_SOCKET_PATH, deviceId, clientRole } = {}) {
 	try {
@@ -96,7 +100,7 @@ export async function createSocketConnection({ socketPath = DEFAULT_SOCKET_PATH,
 			throw new Error('Socket.IO client failed to load');
 		}
 		const query = {};
-		const resolvedDeviceId = deviceId ?? parseDeviceIdFromLocation();
+		const resolvedDeviceId = deviceId === null ? null : (deviceId ?? parseDeviceIdFromLocation());
 		if (resolvedDeviceId != null) {
 			query.deviceId = String(resolvedDeviceId);
 		}
