@@ -1,3 +1,4 @@
+import { Box3, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { loadFigureTemplate } from './FigureLoader.js';
 
@@ -48,25 +49,52 @@ export default class Desktop {
 
   /**
    * Frame the whole scene: aim the orbit target at the scene's bounding
-   * box center and pull the camera back (along the current view
-   * direction) far enough for the box to fit both FOV axes. Raises
-   * maxDistance when the fit needs more than the default zoom range.
+   * box center and place the camera (along the current view direction)
+   * at the exact distance where every box corner lands inside both FOV
+   * frustums, plus a small margin. Raises maxDistance when the fit needs
+   * more than the default zoom range.
    */
-  frameScene(scene, { padding = 1.25 } = {}) {
+  frameScene(scene, { padding = 1.1 } = {}) {
     if (!this.controls || !scene) return;
     const box = new Box3().setFromObject(scene);
     if (box.isEmpty()) return;
     const center = box.getCenter(new Vector3());
     const size = box.getSize(new Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    if (!Number.isFinite(maxDim) || maxDim <= 0) return;
-    const verticalFov = (this.camera.fov * Math.PI) / 180;
-    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * (this.camera.aspect || 1));
-    const fitFov = Math.min(verticalFov, horizontalFov);
-    const distance = ((maxDim / 2) / Math.tan(fitFov / 2)) * padding;
+    if (![size.x, size.y, size.z].every((v) => Number.isFinite(v)) || box.min.equals(box.max)) return;
+
     const direction = this.camera.position.clone().sub(this.controls.target);
     if (direction.lengthSq() === 0) direction.set(1, 0.6, 1);
     direction.normalize();
+
+    // Camera basis for a camera at center + direction * D looking at center.
+    const upHint = Math.abs(direction.y) > 0.99 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0);
+    const right = new Vector3().crossVectors(direction, upHint).normalize();
+    const up = new Vector3().crossVectors(right, direction).normalize();
+
+    const verticalFov = (this.camera.fov * Math.PI) / 180;
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * (this.camera.aspect || 1));
+    const tanV = Math.tan(verticalFov / 2);
+    const tanH = Math.tan(horizontalFov / 2);
+
+    // For each corner: D must satisfy |x'| <= tanH * (D - zDepth) and
+    // |y'| <= tanV * (D - zDepth) — solve for the largest required D.
+    let distance = 0;
+    const rel = new Vector3();
+    for (let i = 0; i < 8; i++) {
+      rel.set(
+        (i & 1) ? box.max.x : box.min.x,
+        (i & 2) ? box.max.y : box.min.y,
+        (i & 4) ? box.max.z : box.min.z,
+      ).sub(center);
+      const depth = rel.dot(direction);
+      distance = Math.max(
+        distance,
+        Math.abs(rel.dot(right)) / tanH + depth,
+        Math.abs(rel.dot(up)) / tanV + depth,
+      );
+    }
+    distance = Math.max(distance * padding, this.controls.minDistance || 0.5);
+
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScaledVector(direction, distance);
     this.controls.maxDistance = Math.max(this.controls.maxDistance, distance * 1.5);
