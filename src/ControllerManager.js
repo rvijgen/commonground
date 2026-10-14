@@ -97,38 +97,85 @@ export class ControllerManager {
 
     /**
      * Sets up the XR controllers and their event listeners.
+     *
+     * WebXR hands out controller indices in connection order, so index 0 is
+     * NOT necessarily the left controller and index 1 is NOT necessarily the
+     * right one (e.g. when only one controller is awake it always lands on
+     * index 0). Roles are therefore resolved from inputSource.handedness in
+     * _handleControllerConnected, and the select/squeeze handlers ignore
+     * events from controllers that are known to be left-handed.
      */
     setupControllers() {
-        // Left controller (controller 0)
         this.leftController = this.renderer.xr.getController(0);
-        this.leftController.addEventListener('connected', this.handleLeftControllerConnected.bind(this));
-        this.leftController.addEventListener('disconnected', this.handleLeftControllerDisconnected.bind(this));
-        this.scene.add(this.leftController);
-
-        // Right controller (controller 1) - for control panel
         this.rightController = this.renderer.xr.getController(1);
-        this.rightController.addEventListener('connected', this.handleRightControllerConnected.bind(this));
-        this.rightController.addEventListener('selectstart', this.handleRightSelectStart.bind(this));
-        this.rightController.addEventListener('selectend', this.handleRightSelectEnd.bind(this));
-        this.rightController.addEventListener('squeezestart', this.handleRightSqueezeStart.bind(this));
-        this.rightController.addEventListener('squeezeend', this.handleRightSqueezeEnd.bind(this));
-        this.scene.add(this.rightController);
+
+        for (const controller of [this.leftController, this.rightController]) {
+            controller.addEventListener('connected', (event) => this._handleControllerConnected(controller, event));
+            controller.addEventListener('disconnected', () => this._handleControllerDisconnected(controller));
+            controller.addEventListener('selectstart', this.handleRightSelectStart.bind(this));
+            controller.addEventListener('selectend', this.handleRightSelectEnd.bind(this));
+            controller.addEventListener('squeezestart', this.handleRightSqueezeStart.bind(this));
+            controller.addEventListener('squeezeend', this.handleRightSqueezeEnd.bind(this));
+            this.scene.add(controller);
+        }
 
         // Add lines to both controllers
         const geometry = new BufferGeometry().setFromPoints([
             new Vector3(0, 0, 0),
             new Vector3(0, 0, -1),
         ]);
-        
+
         const leftLine = new Line(geometry);
         leftLine.userData.isControllerBeam = true;
         this.leftController.add(leftLine);
         this.leftBeamLine = leftLine;
-        
+
         const rightLine = new Line(geometry);
         rightLine.userData.isControllerBeam = true;
         this.rightController.add(rightLine);
         this.rightBeamLine = rightLine;
+    }
+
+    /**
+     * Tracks the input source on the controller object and remembers the
+     * right-handed source for gamepad button polling.
+     */
+    _handleControllerConnected(controller, event) {
+        const inputSource = event?.data || null;
+        controller.userData.inputSource = inputSource;
+        if (inputSource?.handedness === 'right') {
+            this.rightInputSource = inputSource;
+            console.log('Right controller connected');
+        }
+    }
+
+    _handleControllerDisconnected(controller) {
+        if (this.rightInputSource && controller.userData.inputSource === this.rightInputSource) {
+            this.rightInputSource = null;
+            this.rightMenuButtonWasPressed = false;
+        }
+        controller.userData.inputSource = null;
+    }
+
+    /**
+     * True when the controller is the right-handed one. Controllers whose
+     * input source has not been seen yet (no 'connected' event) are allowed
+     * through, preserving the legacy index-based behavior.
+     */
+    _isRightInteractionController(controller) {
+        const handedness = controller?.userData?.inputSource?.handedness;
+        return !handedness || handedness === 'right';
+    }
+
+    /**
+     * The controller object currently carrying the right-handed input source,
+     * falling back to the index-1 object when handedness is unknown.
+     */
+    _getRightInteractionController() {
+        for (const controller of [this.rightController, this.leftController]) {
+            if (controller?.userData?.inputSource?.handedness === 'right') return controller;
+        }
+        return this.rightController;
     }
 
     setBeamLengthForController(controller, distance) {
@@ -204,40 +251,6 @@ export class ControllerManager {
     }
 
     /**
-     * LEFT CONTROLLER HANDLERS
-     */
-
-    /**
-     * Handles left controller connection events.
-     */
-    handleLeftControllerConnected(event) {
-        void event;
-    }
-
-    /**
-     * Handles left controller disconnection events.
-     */
-    handleLeftControllerDisconnected() {
-    }
-
-    /**
-     * RIGHT CONTROLLER HANDLERS (for control panel)
-     */
-
-    /**
-     * Handles right controller connection events.
-     */
-    handleRightControllerConnected(event) {
-        this.rightInputSource = event?.data || null;
-        console.log('Right controller connected');
-    }
-
-    handleRightControllerDisconnected() {
-        this.rightInputSource = null;
-        this.rightMenuButtonWasPressed = false;
-    }
-
-    /**
      * Check if controller is pointing at scene objects (like the cube)
      */
     isPointingAtSceneObjects(controller) {
@@ -265,11 +278,13 @@ export class ControllerManager {
     /**
      * Handles 'selectstart' event for the right controller (trigger - context-aware interaction).
      */
-    handleRightSelectStart() {
+    handleRightSelectStart(event) {
+        const controller = event?.target || this._getRightInteractionController();
+        if (!this._isRightInteractionController(controller)) return;
         console.log('Right controller trigger pressed');
         // First check if we're pointing at the VR control panel
         if (this.vrControlPanel && this.vrControlPanel.getPanel().visible) {
-            const panelInteractionConsumed = this.vrControlPanel.handleControllerSelect(this.rightController);
+            const panelInteractionConsumed = this.vrControlPanel.handleControllerSelect(controller);
             this.isPointingAtPanel = panelInteractionConsumed || this.vrControlPanel.isGrabbed;
             if (this.isPointingAtPanel) {
                 if (this.vrControlPanel.isGrabbed) {
@@ -281,12 +296,12 @@ export class ControllerManager {
             }
         }
 
-        
 
-        
-        const isPointingAtSceneObject = this.isPointingAtSceneObjects(this.rightController);
+
+
+        const isPointingAtSceneObject = this.isPointingAtSceneObjects(controller);
         if (isPointingAtSceneObject && this.sceneManager && !this.sceneManager.isSceneGrabbed()) {
-            this.sceneManager.startGrab(this.rightController);
+            this.sceneManager.startGrab(controller);
             return;
         }
 
@@ -296,23 +311,27 @@ export class ControllerManager {
     /**
      * Handles 'selectend' event for the right controller (trigger release)
      */
-    handleRightSelectEnd() {
+    handleRightSelectEnd(event) {
+        const controller = event?.target || this._getRightInteractionController();
+        if (!this._isRightInteractionController(controller)) return;
         // Release panel grab
         if (this.vrControlPanel && this.vrControlPanel.getPanel().visible) {
-            this.vrControlPanel.handleControllerRelease(this.rightController);
+            this.vrControlPanel.handleControllerRelease(controller);
         }
         // Release scene grab
         if (this.sceneManager && !this.vrControlPanel?.isGrabbed) {
             this.sceneManager.stopGrab(this.ratk);
         }
         this.isPointingAtPanel = false;
-        
+
     }
 
     /**
      * Handles 'squeezestart' event for the right controller (grip - toggle panel visibility).
      */
-    handleRightSqueezeStart() {
+    handleRightSqueezeStart(event) {
+        const controller = event?.target || this._getRightInteractionController();
+        if (!this._isRightInteractionController(controller)) return;
         // Reserved for app-level squeeze interactions.
         console.log('Right controller squeeze start');
     }
@@ -320,7 +339,9 @@ export class ControllerManager {
     /**
      * Handles 'squeezeend' event for the right controller (not used anymore).
      */
-    handleRightSqueezeEnd() {
+    handleRightSqueezeEnd(event) {
+        const controller = event?.target || this._getRightInteractionController();
+        if (!this._isRightInteractionController(controller)) return;
         //console.log('Right controller squeeze end');
     }
 
@@ -328,20 +349,22 @@ export class ControllerManager {
         return !!this.commonGround?.adminModeEnabled;
     }
 
-    _getGamepadButtonsForHandedness(handedness) {
+    _getInputSourceForHandedness(handedness) {
+        if (handedness === 'right' && this.rightInputSource) {
+            return this.rightInputSource;
+        }
+        const fromControllers = [this.leftController, this.rightController]
+            .map((controller) => controller?.userData?.inputSource)
+            .find((source) => source && source.handedness === handedness && source.gamepad);
+        if (fromControllers) return fromControllers;
         const session = this.renderer?.xr?.getSession?.();
-        const inputSource =
-            handedness === 'left'
-                ? this.leftController?.userData?.inputSource ||
-                    Array.from(session?.inputSources || []).find(
-                        (source) => source && source.handedness === 'left' && source.gamepad,
-                    ) || null
-                : this.rightInputSource || this.rightController?.userData?.inputSource ||
-                    Array.from(session?.inputSources || []).find(
-                        (source) => source && source.handedness === 'right' && source.gamepad,
-                    ) || null;
+        return Array.from(session?.inputSources || []).find(
+            (source) => source && source.handedness === handedness && source.gamepad,
+        ) || null;
+    }
 
-        return inputSource?.gamepad?.buttons || null;
+    _getGamepadButtonsForHandedness(handedness) {
+        return this._getInputSourceForHandedness(handedness)?.gamepad?.buttons || null;
     }
 
     _updateRightMenuButtons() {
@@ -379,15 +402,7 @@ export class ControllerManager {
             return;
         }
 
-        let inputSource = this.rightInputSource || this.rightController?.userData?.inputSource || null;
-        if (!inputSource) {
-            const session = this.renderer?.xr?.getSession?.();
-            if (session?.inputSources) {
-                inputSource = Array.from(session.inputSources).find(
-                    (source) => source && source.handedness === 'right' && source.gamepad,
-                ) || null;
-            }
-        }
+        const inputSource = this._getInputSourceForHandedness('right');
 
         const buttons = inputSource?.gamepad?.buttons;
         if (!buttons) return;
@@ -557,8 +572,9 @@ export class ControllerManager {
      * Update control panel interactions
      */
     updateControlPanel() {
-        if (this.vrControlPanel && this.rightController && this.vrControlPanel.getPanel().visible) {
-            this.vrControlPanel.checkIntersections(this.rightController);
+        const controller = this._getRightInteractionController();
+        if (this.vrControlPanel && controller && this.vrControlPanel.getPanel().visible) {
+            this.vrControlPanel.checkIntersections(controller);
             // Note: updateGrab() is now called in the main update() method
         }
     }
@@ -670,7 +686,7 @@ export class ControllerManager {
         }
         // Anchor hover feedback
         const prevHover = this.anchorHover;
-        this.anchorHover = this.getIntersectedAnchor(this.rightController);
+        this.anchorHover = this.getIntersectedAnchor(this._getRightInteractionController());
         if (prevHover && prevHover !== this.anchorHover && prevHover.children[0] && prevHover.children[0].material) {
             // Restore color if no longer hovered or grabbed
             if (!this.anchorIsGrabbed || prevHover !== this.anchorGrabbed) {
