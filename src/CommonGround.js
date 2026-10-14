@@ -40,6 +40,8 @@ import Desktop from './Desktop.js';
 import { createSocketConnection, resolveSyncEnabled } from './SocketClient.js';
 import { SyncChannel } from './SyncChannel.js';
 import { StatusChannel } from './StatusChannel.js';
+import { StreamChannel } from './StreamChannel.js';
+import { StreamFigures } from './StreamFigures.js';
 import { DesktopHud } from './DesktopHud.js';
 import { FPSCounter, resolveFpsCounterEnabled } from './FPSCounter.js';
 
@@ -122,6 +124,11 @@ export class CommonGround {
             resolveEnabled: () => resolveSyncEnabled(),
         });
         this.status = new StatusChannel(() => this._ensureSocketConnection());
+        this.stream = new StreamChannel(() => this._ensureSocketConnection());
+        this._lastPoseSentAt = 0;
+        this._poseSenderPosition = new Vector3();
+        this._poseSenderQuaternion = new Quaternion();
+        this._streamFigures = null;
 
         // Desktop-only DOM overlay (sync toggle + session logs link)
         this._desktopHudEnabled = options.desktopHud !== false;
@@ -280,6 +287,9 @@ export class CommonGround {
     async init() {
         this.scene = new Scene();
         this._ensureSocketConnection();
+        // Track the server-side stream toggle from the start: headset pages
+        // send poses without any UI subscriber, so attach eagerly.
+        this.stream.attach();
         // Follow runtime space switches: the server broadcasts cg:space when
         // the active space changes (desktop HUD Spaces tab); re-run the
         // server restore so this headset adopts the newly selected space's
@@ -740,6 +750,14 @@ export class CommonGround {
             if (this._desktopFigureUrl) {
                 this.desktop.loadReferenceFigure(this.scene, this._desktopFigureUrl);
             }
+            // cg.stream pose figures: one tinted figure per configured
+            // headset, shown while its headset streams poses (desktop only —
+            // immersed pages send poses, they don't render figures).
+            this._streamFigures = new StreamFigures(this, {
+                scene: this.scene,
+                figureUrl: this._desktopFigureUrl,
+            });
+            this._streamFigures.start();
         }
 
         if (navigator.xr) {
@@ -1523,6 +1541,27 @@ export class CommonGround {
         // Framework FPS counter plane (enabled per fpsCounter preference)
         if (this._fpsCounter && this._fpsCounter.enabled) {
             this._fpsCounter.update(performance.now());
+        }
+
+        // cg.stream pose sender: only while the shared toggle is on AND this
+        // page is immersed (desktops never present, so they never send).
+        // Throttled to ~10 Hz; the relay stamps deviceId/at and fans out.
+        if (this.stream.enabled && this.renderer.xr.isPresenting) {
+            const now = performance.now();
+            if (now - this._lastPoseSentAt >= 100) {
+                this._lastPoseSentAt = now;
+                const position = this.camera.getWorldPosition(this._poseSenderPosition);
+                const quaternion = this.camera.getWorldQuaternion(this._poseSenderQuaternion);
+                this.stream.sendPose({
+                    position: { x: position.x, y: position.y, z: position.z },
+                    quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+                });
+            }
+        }
+
+        // Hide stream figures whose headset stopped posing (immersion ended).
+        if (this._streamFigures) {
+            this._streamFigures.update();
         }
 
         // Debug depth overlay AFTER renderer.render() — raw GL calls and

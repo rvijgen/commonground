@@ -331,10 +331,18 @@ export async function createServer(options = {}) {
 			syncDefault: syncDefault !== false,
 			headsets: (Array.isArray(headsets) ? headsets : [])
 				.filter((headset) => headset && headset.id != null)
-				.map((headset) => ({
-					id: headset.id,
-					label: String(headset.label ?? `Headset ${headset.id}`),
-				})),
+				.map((headset) => {
+					const entry = {
+						id: headset.id,
+						label: String(headset.label ?? `Headset ${headset.id}`),
+					};
+					// DOM-safe color only (hex/rgb/CSS strings); legacy ANSI SGR
+					// escape strings contain control chars and are stripped.
+					if (typeof headset.color === 'string' && /^[^\x00-\x1F]{1,64}$/.test(headset.color)) {
+						entry.color = headset.color;
+					}
+					return entry;
+				}),
 		});
 	});
 

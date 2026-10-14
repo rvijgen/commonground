@@ -64,6 +64,9 @@ function getClientLabelFromSocket(socket, nextOrdinal) {
  * Options (besides socketPath/quiet):
  *   sync   - set false to disable the built-in cg.sync channel (default true)
  *   status - set false to disable the built-in cg.status channel (default true)
+ *   stream - set false to disable the built-in cg.stream toggle + cg:pose
+ *            pose relay (default true). cg:pose messages are forwarded but
+ *            NEVER logged (they would flood the log sink at ~10 Hz/headset)
  *   onLog  - sink for structured log lines ([socket:...], [socket] ..., [status]
  *            ...); defaults to console.log. Pass an in-process dashboard's
  *            writeLogLine to feed it without child-process scraping.
@@ -100,6 +103,7 @@ export function attachSocketRelay(servers, options = {}) {
 		quiet = process.env.QUIET_LOGS === '1',
 		sync = true,
 		status = true,
+		stream = true,
 		onLog = null,
 		hasEnteredImmersion = (state) => Boolean(state?.enteredImmersion),
 	} = options;
@@ -120,6 +124,8 @@ export function attachSocketRelay(servers, options = {}) {
 	let nextClientOrdinal = 1;
 	const statusChannels = [];
 	const coreStatusStates = new Map();
+	// cg.stream: one shared pose-streaming toggle per relay.
+	let streamEnabled = false;
 
 	// Structured log lines ([socket:...], [socket] ..., [status] ...) go to the
 	// onLog sink when provided (e.g. an in-process dashboard), else stdout.
@@ -193,6 +199,59 @@ export function attachSocketRelay(servers, options = {}) {
 			const summary = { deviceId, state: next, at };
 			logLine(`[status] ${JSON.stringify(summary)}`);
 			broadcast('cg:status', summary);
+		});
+	}
+
+	// cg.stream / cg:pose: shared pose-streaming toggle plus the high-rate
+	// pose fan-out. Any non-screen client may flip the toggle; the new state
+	// is stored, logged ONCE, and broadcast to all clients (sender included —
+	// every page tracks the same state). New sockets get the current state on
+	// connect so late joiners sync. Poses are forwarded only while streaming
+	// is on, with deviceId stamped from the handshake query (never the
+	// payload) and a server timestamp — and are NEVER logged: at ~10 Hz per
+	// headset they would flood the onLog sink / dashboard TUI.
+	function finiteNumber(value) {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	}
+
+	function sanitizePoseVector(value, keys) {
+		if (!value || typeof value !== 'object') return null;
+		const result = {};
+		for (const key of keys) {
+			const parsed = finiteNumber(value[key]);
+			if (parsed == null) return null;
+			result[key] = parsed;
+		}
+		return result;
+	}
+
+	function attachCoreStreamChannel(socket) {
+		socket.emit('cg:stream', { enabled: streamEnabled });
+
+		socket.on('cg:stream', (payload) => {
+			if (isScreenSocket(socket)) return;
+			if (!payload || typeof payload !== 'object') return;
+			const enabled = Boolean(payload.enabled);
+			if (enabled === streamEnabled) return;
+			streamEnabled = enabled;
+			logLine(`[socket] stream ${enabled ? 'on' : 'off'}`);
+			broadcast('cg:stream', { enabled: streamEnabled });
+		});
+
+		socket.on('cg:pose', (payload) => {
+			if (isScreenSocket(socket)) return;
+			if (!streamEnabled) return;
+			const position = sanitizePoseVector(payload?.position, ['x', 'y', 'z']);
+			const quaternion = sanitizePoseVector(payload?.quaternion, ['x', 'y', 'z', 'w']);
+			if (!position || !quaternion) return;
+			const message = {
+				position,
+				quaternion,
+				deviceId: parseDeviceIdQuery(socket?.handshake?.query ?? {}),
+				at: Date.now(),
+			};
+			broadcastExcept(socket, 'cg:pose', message);
 		});
 	}
 
@@ -301,6 +360,7 @@ export function attachSocketRelay(servers, options = {}) {
 			attachStatusChannels(socket);
 			if (sync) attachCoreSyncChannel(socket);
 			if (status) attachCoreStatusChannel(socket);
+			if (stream) attachCoreStreamChannel(socket);
 
 			socket.on('disconnect', () => {
 				const disconnectedClientLabel = clientLabelBySocketId.get(socket.id) || 'client ?';
@@ -362,6 +422,10 @@ export function attachSocketRelay(servers, options = {}) {
 		// state satisfies hasEnteredImmersion), null while not immersed.
 		immersion: {
 			get: (deviceId) => immersedAtByDeviceId.get(Number(deviceId)) ?? null,
+		},
+		// The shared pose-streaming toggle (cg.stream).
+		stream: {
+			enabled: () => streamEnabled,
 		},
 		coreStatus: {
 			entries: coreStatusStates,

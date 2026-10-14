@@ -70,7 +70,9 @@ export class DesktopHud {
 		this._activeTab = 'headsets';
 		this._tabButtons = new Map();
 		this._syncCheckbox = null;
+		this._streamCheckbox = null;
 		this._unsubscribeEnabled = null;
+		this._unsubscribeStream = null;
 		this._unsubscribeStatus = null;
 		this._statusRefreshTimer = null;
 		this._pollTimer = null;
@@ -139,11 +141,16 @@ export class DesktopHud {
 		doc.body.appendChild(container);
 
 		this._container = container;
-		// Bound once; the listener updates whichever sync checkbox instance
-		// the Session tab currently shows.
+		// Bound once; the listeners update whichever checkbox instance the
+		// Session tab currently shows.
 		this._unsubscribeEnabled = this._cg.sync.onEnabledChange((enabled) => {
 			if (this._syncCheckbox) this._syncCheckbox.checked = enabled;
 		});
+		this._unsubscribeStream = typeof this._cg.stream?.onEnabledChange === 'function'
+			? this._cg.stream.onEnabledChange((enabled) => {
+				if (this._streamCheckbox) this._streamCheckbox.checked = enabled;
+			})
+			: null;
 		this._selectTab(this._activeTab);
 	}
 
@@ -178,6 +185,7 @@ export class DesktopHud {
 		this._panel = null;
 		this._headsetCards = new Map();
 		this._syncCheckbox = null;
+		this._streamCheckbox = null;
 	}
 
 	_showPanel() {
@@ -533,6 +541,23 @@ export class DesktopHud {
 		wrap.appendChild(syncLabel);
 		this._syncCheckbox = syncCheckbox;
 
+		if (this._cg.stream) {
+			const streamLabel = doc.createElement('label');
+			streamLabel.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;';
+			const streamCheckbox = doc.createElement('input');
+			streamCheckbox.type = 'checkbox';
+			streamCheckbox.checked = this._cg.stream.enabled === true;
+			streamCheckbox.addEventListener('change', () => {
+				this._cg.stream.setEnabled(streamCheckbox.checked);
+			});
+			streamLabel.appendChild(streamCheckbox);
+			const streamText = doc.createElement('span');
+			streamText.textContent = 'Stream';
+			streamLabel.appendChild(streamText);
+			wrap.appendChild(streamLabel);
+			this._streamCheckbox = streamCheckbox;
+		}
+
 		const logsButton = doc.createElement('button');
 		logsButton.type = 'button';
 		logsButton.textContent = 'Session Log';
@@ -628,6 +653,10 @@ export class DesktopHud {
 		if (typeof this._unsubscribeEnabled === 'function') {
 			this._unsubscribeEnabled();
 			this._unsubscribeEnabled = null;
+		}
+		if (typeof this._unsubscribeStream === 'function') {
+			this._unsubscribeStream();
+			this._unsubscribeStream = null;
 		}
 		this._hidePanel();
 		if (this._container && this._container.parentNode) {

@@ -1,5 +1,5 @@
-import { Box3, Vector3 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { loadFigureTemplate } from './FigureLoader.js';
 
 export default class Desktop {
   constructor(camera, renderer) {
@@ -64,21 +64,13 @@ export default class Desktop {
   /**
    * Load a reference figure (default: bundled user1.fbx) and stand it at
    * the scene origin, so the desktop view has a human-scale orientation
-   * cue at its center. FBX exports are often in centimeters: a figure
-   * taller than 10 raw units is assumed to be cm and scaled to meters.
+   * cue at its center. Shares the load/normalize helper (cm → m scaling,
+   * feet at the group origin) with the cg.stream headset figures.
    */
   async loadReferenceFigure(scene, url) {
     try {
-      const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
-      const figure = await new FBXLoader().loadAsync(url);
-      const rawHeight = new Box3().setFromObject(figure).getSize(new Vector3()).y;
-      if (rawHeight > 10) figure.scale.setScalar(0.01);
+      const figure = await loadFigureTemplate(url);
       scene.add(figure);
-      const box = new Box3().setFromObject(figure);
-      const center = box.getCenter(new Vector3());
-      figure.position.x -= center.x;
-      figure.position.z -= center.z;
-      figure.position.y -= box.min.y;
       return figure;
     } catch (error) {
       console.warn('Desktop reference figure failed to load:', error);

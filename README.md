@@ -64,7 +64,8 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
 - `GET/POST/DELETE /api/anchors` (legacy alias `/anchors`) — persistent anchor references; `?device=N` scopes keys as `device_<id>_<key>`
 - `GET/POST /api/mesh` (legacy alias `/mesh`) — room mesh export
 - `POST /api/roommesh`, `GET /api/roommesh[/:sessionId]` — legacy per-session room meshes
-- `GET /api/client-config` — client runtime config (`{ syncDefault, headsets: [{ id, label }] }`)
+- `GET /api/client-config` — client runtime config (`{ syncDefault, headsets: [{ id, label, color? }] }`;
+  `color` passes through only when DOM-safe — ANSI SGR escape strings are stripped)
 - `GET /api/headsets` — live per-headset overview for the desktop HUD:
   `[{ id, label, connected, connectedDurationMs (null when disconnected),
   immersedAt, immersedDurationMs (null until immersion enter), status
@@ -396,9 +397,9 @@ cg.init().then(() => {
 });
 ```
 
-### Cross-headset channels (`cg.sync` / `cg.status`)
+### Cross-headset channels (`cg.sync` / `cg.status` / `cg.stream`)
 
-Every `CommonGround` instance carries two socket channels. The socket.io
+Every `CommonGround` instance carries three socket channels. The socket.io
 client script is loaded lazily from the same origin
 (`/socket.io/socket.io.js`) at first use — the import graph stays
 socket.io-free, and apps that run without a server simply no-op. The
@@ -421,12 +422,31 @@ const off = cg.sync.on('tileGrab', (payload, { deviceId, at }) => {
 cg.status.update({ enteredImmersion: true });
 cg.status.update({ tileDraggedCount: 3 });   // merges with the above
 cg.status.onStatus(({ deviceId, state, at }) => { /* spectator pages */ });
+
+// cg.stream — one shared "stream headset poses" toggle (server-side state,
+// default off). Any non-screen client may flip it; the new state is
+// broadcast to every client and pushed to late joiners on connect. While
+// on, immersed pages (renderer.xr.isPresenting) send their camera world
+// pose at ~10 Hz from the render loop — desktops never present, so they
+// never send. Screen-role clients receive state/poses but cannot emit.
+cg.stream.setEnabled(true);
+cg.stream.enabled;                            // last state from the server
+cg.stream.onEnabledChange((enabled) => {});
+cg.stream.onPose(({ deviceId, position, quaternion, at }) => {});
 ```
 
 Wire formats (server-relayed, no app server code needed): `cg:sync` carries
 `{ type, payload, deviceId, at }`; `cg:status` carries partial state objects
-upstream and `{ deviceId, state, at }` downstream. Emits made before the
-socket connects are queued and flushed on connect.
+upstream and `{ deviceId, state, at }` downstream; `cg:stream` carries
+`{ enabled }` both ways; `cg:pose` carries `{ position: {x,y,z},
+quaternion: {x,y,z,w} }` upstream (deviceId/at stamped by the server — the
+payload's deviceId is never trusted) and downstream. `cg:pose` is forwarded
+only while streaming is on and is **never logged** — at ~10 Hz per headset
+it would flood the log sink / dashboard TUI. Emits made before the socket
+connects are queued and flushed on connect (poses are ephemeral and simply
+dropped instead). Server-side the toggle is readable via
+`relay.stream.enabled()`; the built-in channel can be disabled with
+`attachSocketRelay(..., { stream: false })`.
 
 #### Runtime sync participation: `cg.sync.enabled`
 
@@ -475,10 +495,22 @@ subpath-served pages keep working. Disable it with
   `<dataDir>/spaces/<name>/` and broadcasts `cg:space`; connected headsets
   re-run their server anchor restore without a reload, and the Headsets
   tab's anchor state refers to the newly selected space.
-- **Session**: the sync on/off toggle (`cg.sync.enabled`, runtime switch)
-  and a Session Log button that opens the integrated viewer
+- **Session**: the sync on/off toggle (`cg.sync.enabled`, runtime switch),
+  the **Stream** toggle (`cg.stream`, shared server-side switch, default
+  off), and a Session Log button that opens the integrated viewer
   (`commonground/logs`) in an iframe overlay (X, ESC or backdrop click to
   close).
+
+While Stream is on, every immersed headset sends its camera pose (~10 Hz)
+and the desktop page shows one human figure per configured headset — the
+bundled FBX (same asset as the origin reference figure, shared
+load/normalize helper) cloned with `SkeletonUtils.clone` and tinted with
+the headset's `color` from `api/client-config`. Figures stand with their
+feet at `(x, 0, z)` and yaw-only orientation (a standing figure doesn't
+pitch/roll with the head), stay hidden until the first pose, and are
+hidden again when no pose arrives for ~1s — poses stop when immersion
+ends, the page reloads, or the headset disconnects, so there are no
+parking positions and the app configures nothing.
 
 The integrated session log viewer lives at `GET /commonground/logs` (title
 via `sessionLogTitle`, default 'Session Logs'), backed by
