@@ -229,7 +229,7 @@ export default {
 	setupRelay: (relay) => {},                     // escape hatch (registerRelayEvents etc.)
 	dashboard: {                      // presence enables the in-process dashboard
 		enabled: true,
-		headsets: [{ id: 1, label: 'Headset 1', color: '\x1b[38;2;255;73;2m' }],
+		headsets: [{ id: 1, label: 'Headset 1', color: '#ff4902' }],  // hex → ANSI in the TUI
 		columns: [{ render: (status, headset) => `...` }],
 		statusFields: {                 // declares the status shape once; derives
 			introductionStep: 'number',           // the default status and the
@@ -319,7 +319,7 @@ import { runDashboard } from 'commonground/dashboard';
 runDashboard({
 	title: 'My App Dashboard',
 	headsets: [
-		{ id: 1, label: 'Headset 1', color: '\x1b[38;2;255;73;2m' },
+		{ id: 1, label: 'Headset 1', color: '#ff4902' },  // hex ('#ff4902'/'#f40') or ANSI escape
 		{ id: 2, label: 'Headset 2', color: null },
 	],
 	columns: [{ render: (status) => `Intro step: ${status.introductionStep ?? 0}` }],

@@ -316,8 +316,9 @@ function createHelperPage({ pageConfig, host, headsets }) {
  *
  * Config:
  *   title              - dashboard header title
- *   headsets           - [{ id, label, color }]; color is an ANSI SGR escape
- *                        string (e.g. '\x1b[38;2;255;73;2m') or null
+ *   headsets           - [{ id, label, color }]; color is a hex string
+ *                        ('#ff4902' or '#f40', translated to ANSI for the
+ *                        TUI), an ANSI SGR escape string, or null
  *   columns            - extra status rows: [{ render(status, headset) => string }]
  *   statusFields       - declarative status shape (see createStatusFromFields);
  *                        derives the default status and the session-log entry
@@ -567,11 +568,27 @@ export function runDashboard(config = {}) {
 		}
 	}
 
+	// Headset colors are configured as hex ('#ff4902' or '#f40'); translate
+	// to a truecolor SGR escape for the TUI. Strings that are already ANSI
+	// escapes pass through unchanged.
+	function headsetColorToAnsi(color) {
+		if (typeof color !== 'string' || color.length === 0) return null;
+		if (color.startsWith('\x1b[')) return color;
+		const hex = color.trim().replace(/^#/, '');
+		const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+		if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+		const r = parseInt(full.slice(0, 2), 16);
+		const g = parseInt(full.slice(2, 4), 16);
+		const b = parseInt(full.slice(4, 6), 16);
+		return `\x1b[38;2;${r};${g};${b}m`;
+	}
+
 	function colorizeHeadsetHeader(headset, label) {
-		if (!headset.color) {
+		const color = headsetColorToAnsi(headset.color);
+		if (!color) {
 			return label;
 		}
-		return `${headset.color}${label}${ANSI_RESET}`;
+		return `${color}${label}${ANSI_RESET}`;
 	}
 
 	function renderDashboard() {
