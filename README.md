@@ -42,14 +42,16 @@ Builds `examples/test-cube/` into `dist/`.
 
 ## Server
 
-One server instance serves one **physical space**. Anchors and room meshes are stored per space:
+Anchors and room meshes are stored per **physical space**:
 
 ```
 server/data/spaces/<spaceId>/anchors.json
 server/data/spaces/<spaceId>/mesh.json
 ```
 
-The CLI defaults to the `default` space; pass `--space <id>` to pick another:
+The CLI starts in the `Studio` space unless `--space <id>` or
+`config.space` says otherwise; the desktop HUD's Spaces tab can switch
+the active space at runtime:
 
 ```bash
 node server/server.js --space adrie            # also --data-dir, --http-port, --https-port
@@ -221,7 +223,7 @@ current directory (default export); `--space` overrides `config.space`:
 
 ```js
 export default {
-	space: 'default',                 // --space overrides
+	space: 'Studio',                  // CLI startup space (default 'Studio'); --space overrides
 	httpPort: 3001,
 	httpsPort: 3002,
 	dataDir: 'data',                  // resolved against cwd
