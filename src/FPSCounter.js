@@ -45,8 +45,8 @@ export class FPSCounter {
 		this._sampleStartAtMs = 0;
 		this._sampleFrameCount = 0;
 		this._lastDisplayedFps = 0;
-		this._isAddedToScene = false;
 		this._activeCamera = null;
+		this._loggedFirstVisiblePose = false;
 		this._canvas = document.createElement('canvas');
 		this._canvas.width = FPS_CANVAS_WIDTH;
 		this._canvas.height = FPS_CANVAS_HEIGHT;
@@ -77,6 +77,8 @@ export class FPSCounter {
 			this._activeCamera = null;
 			// Reset sampling so a re-enable doesn't blend stale frames.
 			this._lastFrameAtMs = null;
+			// Re-log the first visible pose after a re-enable (device diagnostics).
+			this._loggedFirstVisiblePose = false;
 		}
 	}
 
@@ -125,14 +127,6 @@ export class FPSCounter {
 		return this._cg?.getCamera?.() ?? renderer?.camera ?? null;
 	}
 
-	_ensureAddedToScene() {
-		if (this._isAddedToScene) return;
-		const scene = this._cg?.getScene?.();
-		if (!scene) return;
-		scene.add(this._mesh);
-		this._isAddedToScene = true;
-	}
-
 	_attachHudToCamera(camera) {
 		if (!camera) return;
 		if (this._activeCamera === camera && this._mesh.parent === camera) return;
@@ -140,6 +134,16 @@ export class FPSCounter {
 		this._mesh.position.copy(this._localHudOffset);
 		this._mesh.rotation.set(0, 0, 0);
 		this._activeCamera = camera;
+	}
+
+	_attachHudToScene() {
+		const scene = this._cg?.getScene?.();
+		if (!scene || this._mesh.parent === scene) return;
+		// scene.add() also removes the mesh from its previous parent — required
+		// when transitioning from the camera-attached (desktop) pose, because
+		// the XR branch writes world-space transforms into position/quaternion.
+		scene.add(this._mesh);
+		this._activeCamera = null;
 	}
 
 	_syncHudPose() {
@@ -152,7 +156,7 @@ export class FPSCounter {
 
 		const renderer = this._cg?.getRenderer?.();
 		if (renderer?.xr?.isPresenting) {
-			this._ensureAddedToScene();
+			this._attachHudToScene();
 			camera.updateWorldMatrix?.(true, false);
 			camera.getWorldPosition(this._viewerWorldPosition);
 			camera.getWorldQuaternion(this._viewerWorldQuaternion);
@@ -161,10 +165,14 @@ export class FPSCounter {
 			this._mesh.quaternion.copy(this._viewerWorldQuaternion);
 			this._activeCamera = null;
 			this._mesh.visible = true;
+			if (!this._loggedFirstVisiblePose) {
+				this._loggedFirstVisiblePose = true;
+				const p = this._mesh.position;
+				console.log(`[FPSCounter] XR HUD visible at world (${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})`);
+			}
 			return;
 		}
 
-		this._ensureAddedToScene();
 		this._attachHudToCamera(camera);
 		this._mesh.visible = true;
 	}
@@ -209,6 +217,6 @@ export class FPSCounter {
 		this._viewerWorldQuaternion = null;
 		this._hudWorldOffset = null;
 		this._activeCamera = null;
-		this._isAddedToScene = false;
+		this._loggedFirstVisiblePose = false;
 	}
 }
