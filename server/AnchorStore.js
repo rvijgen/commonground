@@ -20,6 +20,18 @@ export function parseDeviceId(value) {
 	return Number.isInteger(parsed) ? parsed : null;
 }
 
+/**
+ * Anchor status of one headset from its device-scoped anchors view: anchored
+ * when the scoped view has a scene_anchor, or — for headsets that only ever
+ * placed the scene as a whole — a centroid_transform. Mirrors the client-side
+ * predicate in src/DesktopHud.js (string form differs: 'no-anchor' here).
+ */
+export function anchorStatusFromScopedView(view) {
+	if (!view || typeof view !== 'object') return 'unknown';
+	if (view.scene_anchor != null || view.centroid_transform != null) return 'anchored';
+	return 'no-anchor';
+}
+
 function anchorDeviceKey(deviceId, id) {
 	return `device_${deviceId}_${id}`;
 }
@@ -65,10 +77,57 @@ export class AnchorStore {
 	constructor({ dataDir, spaceId = 'default' } = {}) {
 		if (!dataDir) throw new Error('AnchorStore requires a dataDir');
 		this.dataDir = dataDir;
+		this.setSpace(spaceId || 'default');
+	}
+
+	/**
+	 * Points the store at another space. Storage paths are recomputed; space
+	 * directories are still created lazily on first write.
+	 */
+	setSpace(spaceId) {
 		this.spaceId = spaceId || 'default';
 		this.spaceDir = path.join(this.dataDir, 'spaces', this.spaceId);
 		this.anchorsFile = path.join(this.spaceDir, 'anchors.json');
 		this.meshFile = path.join(this.spaceDir, 'mesh.json');
+	}
+
+	spacesRoot() {
+		return path.join(this.dataDir, 'spaces');
+	}
+
+	/** Names of existing spaces (subdirectories of <dataDir>/spaces/). */
+	async listSpaces() {
+		try {
+			const entries = await fs.readdir(this.spacesRoot(), { withFileTypes: true });
+			return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+		} catch (_) {
+			return [];
+		}
+	}
+
+	async spaceExists(spaceId) {
+		try {
+			const stats = await fs.stat(path.join(this.spacesRoot(), spaceId));
+			return stats.isDirectory();
+		} catch (_) {
+			return false;
+		}
+	}
+
+	async createSpace(spaceId) {
+		await fs.mkdir(path.join(this.spacesRoot(), spaceId), { recursive: true });
+	}
+
+	/**
+	 * 'anchored' | 'no-anchor' | 'unknown' for one device, from the same
+	 * scoped view GET api/anchors?device=N returns.
+	 */
+	async getAnchorStatus(deviceQuery) {
+		try {
+			return anchorStatusFromScopedView(await this.getAnchors(deviceQuery));
+		} catch (_) {
+			return 'unknown';
+		}
 	}
 
 	async ensureSpaceDir() {

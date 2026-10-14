@@ -269,6 +269,18 @@ export class CommonGround {
     async init() {
         this.scene = new Scene();
         this._ensureSocketConnection();
+        // Follow runtime space switches: the server broadcasts cg:space when
+        // the active space changes (desktop HUD Spaces tab); re-run the
+        // server restore so this headset adopts the newly selected space's
+        // anchors without a reload.
+        Promise.resolve(this._ensureSocketConnection())
+            .then((socket) => {
+                if (!socket || typeof socket.on !== 'function') return;
+                socket.on('cg:space', () => {
+                    if (this.centerCube) this._restoreFromServer();
+                });
+            })
+            .catch(() => {});
         this._setupCamera();
         this._setupLighting();
         this._setupRenderer();

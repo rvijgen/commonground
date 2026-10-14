@@ -55,6 +55,9 @@ function getClientLabelFromSocket(socket, nextOrdinal) {
  *   broadcastExcept(socket, event, message) - emit to all but the sender
  *   coreStatus                       - { entries, get(deviceId) } for the built-in
  *                                      cg:status merge store
+ *   presence                         - { get(deviceId) → { connectedAt } | null,
+ *                                      keys() } for connected devices (handshake
+ *                                      deviceId; screens are not tracked)
  *   registerRelayEvents(defs)        - declarative validate -> log -> broadcast
  *   registerStatusChannel(config)    - per-device status aggregation channel
  *
@@ -104,6 +107,11 @@ export function attachSocketRelay(servers, options = {}) {
 	const clientLabelBySocketId = new Map();
 	const clientLogStateBySocketId = new Map();
 	const deviceIdBySocketId = new Map();
+	// Presence: deviceId (from the typo-tolerant handshake query) →
+	// { connectedAt, socketIds }. A device stays present while any of its
+	// sockets is connected (e.g. headset page + admin page share a deviceId).
+	// Screen-role clients carry no deviceId and are never tracked.
+	const presenceByDeviceId = new Map();
 	let nextClientOrdinal = 1;
 	const statusChannels = [];
 	const coreStatusStates = new Map();
@@ -264,6 +272,9 @@ export function attachSocketRelay(servers, options = {}) {
 			clientLabelBySocketId.set(socket.id, clientLabel);
 			if (deviceId != null) {
 				deviceIdBySocketId.set(socket.id, deviceId);
+				const presence = presenceByDeviceId.get(deviceId) ?? { connectedAt: Date.now(), socketIds: new Set() };
+				presence.socketIds.add(socket.id);
+				presenceByDeviceId.set(deviceId, presence);
 			}
 			const connectLogTimer = setTimeout(() => {
 				const state = clientLogStateBySocketId.get(socket.id);
@@ -297,6 +308,13 @@ export function attachSocketRelay(servers, options = {}) {
 						channel.entries.delete(disconnectedDeviceId);
 					}
 					coreStatusStates.delete(disconnectedDeviceId);
+					const presence = presenceByDeviceId.get(disconnectedDeviceId);
+					if (presence) {
+						presence.socketIds.delete(socket.id);
+						if (presence.socketIds.size === 0) {
+							presenceByDeviceId.delete(disconnectedDeviceId);
+						}
+					}
 				}
 				if (state?.connectedLogged) {
 					logLine(`[socket:${label}] disconnected ${disconnectedClientLabel}`);
@@ -317,6 +335,16 @@ export function attachSocketRelay(servers, options = {}) {
 		ioServers,
 		broadcast,
 		broadcastExcept,
+		// Connected-device presence keyed by handshake deviceId. get() returns
+		// { connectedAt } while any socket for the device is connected, else
+		// null; keys() lists the currently connected deviceIds.
+		presence: {
+			get: (deviceId) => {
+				const entry = presenceByDeviceId.get(Number(deviceId));
+				return entry ? { connectedAt: entry.connectedAt } : null;
+			},
+			keys: () => [...presenceByDeviceId.keys()],
+		},
 		coreStatus: {
 			entries: coreStatusStates,
 			get: (deviceId) => coreStatusStates.get(deviceId) ?? null,

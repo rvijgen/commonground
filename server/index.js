@@ -146,6 +146,16 @@ function withTrailingSlash(paths) {
  *                  GET <prefix>/api/client-config as DOM-safe
  *                  [{ id, label }] (default []; terminal-only fields such as
  *                  ANSI colors are stripped)
+ *   headsetColumns - dashboard column renderers [{ render(status, headset) }]
+ *                  applied per headset in GET <prefix>/api/headsets; must
+ *                  return plain text (ANSI escapes show raw in the browser)
+ *   headsetDefaultStatus - status object merged under the merged cg:status
+ *                  state before rendering headsetColumns (mirrors the CLI
+ *                  dashboard, which always renders from a full status)
+ *   getRelayRuntime - lazy accessor () => relay | null for the socket relay
+ *                  attached after createServer (cli.js wiring); provides
+ *                  presence/coreStatus for GET api/headsets and broadcast
+ *                  for POST api/spaces/select
  *   sessionLogFile - NDJSON session log served at
  *                  GET <prefix>/commonground/api/session-logs
  *                  (default <dataDir>/logs/headset-sessions.ndjson)
@@ -173,6 +183,9 @@ export async function createServer(options = {}) {
 		extraRoutes = null,
 		syncDefault = true,
 		headsets = [],
+		headsetColumns = [],
+		headsetDefaultStatus = {},
+		getRelayRuntime = null,
 		sessionLogFile = null,
 		sessionLogTitle = 'Session Logs',
 		serveExample = false,
@@ -323,6 +336,103 @@ export async function createServer(options = {}) {
 					label: String(headset.label ?? `Headset ${headset.id}`),
 				})),
 		});
+	});
+
+	// Live per-headset overview for the desktop HUD: presence + merged status
+	// from the socket relay (via the lazy getRelayRuntime accessor — the relay
+	// is attached after createServer), dashboard column strings, and the
+	// anchor state of the currently selected space.
+	const headsetPaths = apiPrefixes.map(p => `${p}/api/headsets`);
+	app.get(headsetPaths, async (req, res) => {
+		const relay = typeof getRelayRuntime === 'function' ? getRelayRuntime() : null;
+		const columns = (Array.isArray(headsetColumns) ? headsetColumns : [])
+			.filter((column) => column && typeof column.render === 'function');
+		const list = [];
+		for (const headset of (Array.isArray(headsets) ? headsets : [])) {
+			if (!headset || headset.id == null) continue;
+			const deviceId = Number(headset.id);
+			const presence = relay?.presence?.get?.(deviceId) ?? null;
+			const connected = Boolean(presence);
+			const state = relay?.coreStatus?.get?.(deviceId) ?? null;
+			const entry = {
+				id: headset.id,
+				label: String(headset.label ?? `Headset ${headset.id}`),
+				connected,
+				connectedDurationMs: connected ? Math.max(0, Date.now() - presence.connectedAt) : null,
+				status: state && typeof state === 'object' ? state : null,
+				anchor: await store.getAnchorStatus(deviceId),
+			};
+			if (columns.length > 0) {
+				// Render from a full status, like the CLI dashboard: declared
+				// defaults underneath the merged cg:status state.
+				const renderStatus = { ...(headsetDefaultStatus || {}), ...(entry.status || {}) };
+				entry.columns = columns.map((column) => {
+					try {
+						return String(column.render(renderStatus, headset) ?? '');
+					} catch (_) {
+						return '';
+					}
+				});
+			}
+			list.push(entry);
+		}
+		res.json(list);
+	});
+
+	// Spaces: list/create/select the runtime space. Storage is one directory
+	// per space under <dataDir>/spaces/; selecting a space re-points the
+	// AnchorStore and broadcasts cg:space so connected clients refetch.
+	const spacePaths = apiPrefixes.map(p => `${p}/api/spaces`);
+	const spaceSelectPaths = apiPrefixes.map(p => `${p}/api/spaces/select`);
+
+	function isValidSpaceName(name) {
+		return typeof name === 'string'
+			&& /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/.test(name)
+			&& !name.includes('..');
+	}
+
+	async function spacesPayload() {
+		const spaces = [...new Set([...(await store.listSpaces()), store.spaceId])].sort();
+		return { current: store.spaceId, spaces };
+	}
+
+	app.get(spacePaths, async (req, res) => {
+		res.json(await spacesPayload());
+	});
+
+	app.post(spacePaths, async (req, res) => {
+		const name = String(req.body?.name ?? '').trim();
+		if (!isValidSpaceName(name)) {
+			res.status(400).json({ error: 'Invalid space name (1-64 chars: letters, digits, space, - . _)' });
+			return;
+		}
+		try {
+			await store.createSpace(name);
+			logInfo(`Space created: ${name}`);
+			res.json({ success: true, ...(await spacesPayload()) });
+		} catch (error) {
+			console.error('Space create error:', error);
+			res.status(500).json({ error: 'Failed to create space' });
+		}
+	});
+
+	app.post(spaceSelectPaths, async (req, res) => {
+		const name = String(req.body?.name ?? '').trim();
+		if (!isValidSpaceName(name)) {
+			res.status(400).json({ error: 'Invalid space name (1-64 chars: letters, digits, space, - . _)' });
+			return;
+		}
+		if (!(await store.spaceExists(name))) {
+			res.status(404).json({ error: `Space not found: ${name}` });
+			return;
+		}
+		if (name !== store.spaceId) {
+			store.setSpace(name);
+			logInfo(`Space switched to: ${name}`);
+			const relay = typeof getRelayRuntime === 'function' ? getRelayRuntime() : null;
+			relay?.broadcast?.('cg:space', { space: name, at: Date.now() });
+		}
+		res.json({ success: true, ...(await spacesPayload()) });
 	});
 
 	app.get(sessionLogPaths, async (req, res) => {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer, attachSocketRelay } from './server/index.js';
-import { runDashboard } from './dashboard/index.js';
+import { runDashboard, createStatusFromFields } from './dashboard/index.js';
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -119,6 +119,18 @@ const logLine = (line) => {
 const routes = Array.isArray(config.routes) ? config.routes : [];
 const staticDirs = Array.isArray(config.staticDirs) ? config.staticDirs : [];
 
+// The relay is attached after createServer; server endpoints that need
+// presence/status/broadcast reach it through this lazy accessor.
+let relay = null;
+
+// Default status used when rendering dashboard columns for the headsets API:
+// the project's hook when provided, else derived from its statusFields —
+// mirroring the CLI dashboard, which always renders from a full status.
+const dashboardSection = config.dashboard && typeof config.dashboard === 'object' ? config.dashboard : {};
+const headsetDefaultStatus = typeof dashboardSection.createDefaultStatus === 'function'
+	? dashboardSection.createDefaultStatus()
+	: (dashboardSection.statusFields ? createStatusFromFields(dashboardSection.statusFields) : {});
+
 const server = await createServer({
 	spaceId,
 	dataDir,
@@ -128,6 +140,9 @@ const server = await createServer({
 	syncDefault,
 	onLog: logLine,
 	headsets: config.dashboard && Array.isArray(config.dashboard.headsets) ? config.dashboard.headsets : [],
+	headsetColumns: Array.isArray(dashboardSection.columns) ? dashboardSection.columns : [],
+	headsetDefaultStatus,
+	getRelayRuntime: () => relay,
 	sessionLogFile,
 	sessionLogTitle: config.sessionLogTitle || 'Session Logs',
 	extraRoutes: (app, context) => {
@@ -173,7 +188,7 @@ if (config.dashboard && config.dashboard.enabled !== false) {
 	});
 }
 
-const relay = attachSocketRelay(
+relay = attachSocketRelay(
 	[
 		{ server: server.httpServer, label: 'http' },
 		...(server.httpsServer ? [{ server: server.httpsServer, label: 'https' }] : []),

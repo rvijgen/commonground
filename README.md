@@ -65,6 +65,20 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
 - `GET/POST /api/mesh` (legacy alias `/mesh`) — room mesh export
 - `POST /api/roommesh`, `GET /api/roommesh[/:sessionId]` — legacy per-session room meshes
 - `GET /api/client-config` — client runtime config (`{ syncDefault, headsets: [{ id, label }] }`)
+- `GET /api/headsets` — live per-headset overview for the desktop HUD:
+  `[{ id, label, connected, connectedDurationMs (null when disconnected),
+  status (merged cg:status state or null), columns: string[] (only when
+  columns are configured), anchor: 'anchored' | 'no-anchor' | 'unknown' }]`.
+  Presence comes from the socket relay (handshake deviceId); anchor state
+  refers to the currently selected space.
+- `GET /api/spaces` — `{ current, spaces: string[] }` (subdirs of
+  `<dataDir>/spaces/`, always including the current space)
+- `POST /api/spaces` `{ name }` — create a space (1–64 chars: letters,
+  digits, space, `- . _`); does not switch to it
+- `POST /api/spaces/select` `{ name }` — switch the runtime space: the
+  AnchorStore re-points at `<dataDir>/spaces/<name>/` and the server
+  broadcasts `cg:space`, so connected clients re-run their anchor
+  fetch/apply path without a reload (404 for unknown spaces)
 - `GET /commonground/logs` — integrated session log viewer (HTML)
 - `GET /commonground/api/session-logs` — raw NDJSON session log contents (empty when no sessions yet)
 
@@ -82,6 +96,16 @@ const { app, httpServer, httpsServer, store, listen } = await createServer({
 	syncDefault: true,                // client sync participation default (client-config endpoint)
 	headsets: [{ id: 1, label: 'Headset 1' }],  // project headsets for the HUD overview
 	                                    // (DOM-safe fields only; terminal colors stripped)
+	headsetColumns: [{ render: (status) => `Intro step: ${status.introductionStep ?? 0}` }],
+	                                    // dashboard columns rendered per headset in
+	                                    // GET api/headsets — must return PLAIN TEXT
+	                                    // (ANSI escapes show raw in the browser)
+	headsetDefaultStatus: {},           // merged under the cg:status state before
+	                                    // rendering columns (CLI passes the project's
+	                                    // createDefaultStatus()/statusFields default)
+	getRelayRuntime: () => relay,       // lazy relay accessor for presence/status/
+	                                    // broadcast (the relay attaches after
+	                                    // createServer; cli.js wires this)
 	sessionLogFile: '/path/to/data/logs/headset-sessions.ndjson',  // default <dataDir>/logs/...
 	sessionLogTitle: 'Session Logs',  // log viewer page title
 	extraRoutes: (app, { store, spaceId }) => {
@@ -136,6 +160,9 @@ const relay = attachSocketRelay(
 );
 
 relay.coreStatus.get(3); // -> merged cg:status state for device 3 (null after disconnect)
+relay.presence.get(3);   // -> { connectedAt } while device 3 is connected, else null
+relay.presence.keys();   // -> currently connected deviceIds (handshake deviceId;
+                         //    multiple sockets per device ref-count; screens untracked)
 
 // Declarative validate -> log -> broadcast event relay (custom protocols)
 relay.registerRelayEvents([{
@@ -422,23 +449,31 @@ const offEnabled = cg.sync.onEnabledChange((on) => console.log('sync:', on));
 
 In desktop mode the VR control panel is never shown (it is a VR scene
 placement tool; its callbacks still drive `helpers`/`menu` config). Instead,
-desktop mode gets a small framework-owned DOM overlay top-right — a sync
-on/off toggle bound to `cg.sync.enabled`, a helpers on/off toggle bound to
-`setHelpersVisible()` (the same helper set the VR control panel toggles in
-XR), and a Session Logs link to the server's integrated viewer — that stays
-out of OrbitControls' way and uses relative URLs so subpath-served pages
-keep working. Disable it with `configure({ desktopHud: false })`. VR
-behavior is unchanged.
+desktop mode gets a framework-owned DOM overlay top-right — a tab bar
+(**Headsets | Spaces | Session**) with a persistent **Helpers** toggle
+(`setHelpersVisible()`, the same helper set the VR control panel toggles in
+XR) — that stays out of OrbitControls' way and uses relative URLs so
+subpath-served pages keep working. Disable it with
+`configure({ desktopHud: false })`. VR behavior is unchanged.
 
-When the server's client-config lists project headsets (`headsets` option,
-fed from the dashboard config by the CLI), the HUD gains a collapsible
-headset overview: one row per headset with its anchor status and a Clear
-button. Status comes from `GET api/anchors?device=N` — a headset counts as
-anchored when its device-scoped view has a `scene_anchor`, or a
-`centroid_transform` only (headsets that placed the scene as a whole).
-Clear issues `DELETE api/anchors?device=N` (nulls only that device's keys)
-and refreshes; fetch failures show "unknown" without breaking the HUD. With
-no headsets configured the section hides itself.
+- **Headsets** (default): one card per project headset with presence +
+  ticking session time, the dashboard `columns` strings rendered as lines
+  (falling back to raw `status key: value` when no columns are configured),
+  the anchor state of the currently selected space, and a Clear button
+  (`DELETE api/anchors?device=N`). Data comes from `GET api/headsets`
+  (polled ~2s, plus refreshes on `cg.status` updates); presence and the
+  merged status come from the socket relay (`relay.presence` /
+  `relay.coreStatus`).
+- **Spaces**: the current space, a Select button per existing space, and an
+  add-new-space row (`GET/POST api/spaces`, `POST api/spaces/select`).
+  Selecting a space re-points the server's AnchorStore at
+  `<dataDir>/spaces/<name>/` and broadcasts `cg:space`; connected headsets
+  re-run their server anchor restore without a reload, and the Headsets
+  tab's anchor state refers to the newly selected space.
+- **Session**: the sync on/off toggle (`cg.sync.enabled`, runtime switch)
+  and a Session Log button that opens the integrated viewer
+  (`commonground/logs`) in an iframe overlay (X, ESC or backdrop click to
+  close).
 
 The integrated session log viewer lives at `GET /commonground/logs` (title
 via `sessionLogTitle`, default 'Session Logs'), backed by
