@@ -136,6 +136,7 @@ export class CommonGround {
         this._lastPoseSentAt = 0;
         this._poseSenderPosition = new Vector3();
         this._poseSenderQuaternion = new Quaternion();
+        this._poseStageQuaternion = new Quaternion();
         this._streamFigures = null;
 
         // Desktop-only DOM overlay (sync toggle + session logs link)
@@ -408,12 +409,15 @@ export class CommonGround {
     onSessionStart(fn) { this._onSessionStart = fn; }
 
     /**
-     * Re-frame the desktop orbit camera so the whole scene fits the view.
+     * Re-frame the desktop orbit camera so the app's placed content fits the
+     * view. Frames the SceneManager content group only — the room mesh, RATK
+     * planes and other environment geometry are deliberately left out, since
+     * a roomscan is usually much larger than the content inside it.
      * Runs automatically once initial content loads; apps with late-loading
      * content can call it again afterwards. No-op outside desktop mode.
      */
     frameDesktopView(options) {
-        if (this.isDesktopMode) this.desktop?.frameScene(this.scene, options);
+        if (this.isDesktopMode) this.desktop?.frameScene(this.sceneManager?.getSceneGroup(), options);
     }
 
     /**
@@ -772,8 +776,9 @@ export class CommonGround {
                     return this._restoreDesktopFromServer();
                 })
                 // Initial content is in: pull the camera back far enough
-                // to show the entire scene instead of a close-up.
-                .then(() => this.desktop.frameScene(this.scene));
+                // to show all placed objects (not the room mesh) instead of
+                // a close-up.
+                .then(() => this.frameDesktopView());
             if (this._desktopFigureUrl) {
                 this.desktop.loadReferenceFigure(this.scene, this._desktopFigureUrl);
             }
@@ -1573,12 +1578,25 @@ export class CommonGround {
         // cg.stream pose sender: only while the shared toggle is on AND this
         // page is immersed (desktops never present, so they never send).
         // Throttled to ~10 Hz; the relay stamps deviceId/at and fans out.
+        // The pose is sent RELATIVE to this headset's sceneStage (the anchor
+        // frame the content is aligned through): each side's tracking-space
+        // origin differs by its anchor offset, so a raw world pose would land
+        // the desktop figure ~that offset away from the user. The receiver
+        // maps the relative pose back through its own sceneStage.
         if (this.stream.enabled && this.renderer.xr.isPresenting) {
             const now = performance.now();
             if (now - this._lastPoseSentAt >= 100) {
                 this._lastPoseSentAt = now;
-                const position = this.camera.getWorldPosition(this._poseSenderPosition);
-                const quaternion = this.camera.getWorldQuaternion(this._poseSenderQuaternion);
+                const sceneStage = this.sceneManager.sceneStage;
+                this.camera.getWorldPosition(this._poseSenderPosition);
+                this.camera.getWorldQuaternion(this._poseSenderQuaternion);
+                // position: worldToLocal applies inverse(stage.matrixWorld)
+                const position = sceneStage.worldToLocal(this._poseSenderPosition);
+                // quaternion: rel = inverse(stageWorldQuat) * cameraWorldQuat
+                const quaternion = sceneStage
+                    .getWorldQuaternion(this._poseStageQuaternion)
+                    .invert()
+                    .multiply(this._poseSenderQuaternion);
                 this.stream.sendPose({
                     position: { x: position.x, y: position.y, z: position.z },
                     quaternion: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },

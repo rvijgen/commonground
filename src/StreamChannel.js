@@ -12,6 +12,14 @@
  * pose (~10 Hz, driven by CommonGround's render loop via sendPose); the
  * server stamps deviceId/at and relays to every OTHER client. Screen-role
  * clients receive state and poses but cannot emit either.
+ *
+ * Pose semantics: `position`/`quaternion` are expressed RELATIVE to the
+ * sender's `sceneManager.sceneStage` (the anchor frame content is aligned
+ * through), not in raw tracking space — each side's tracking origin differs
+ * by its anchor offset. Receivers (StreamFigures on the desktop) map the
+ * relative pose back through their own sceneStage's world transform before
+ * placing anything, so a figure lands where the user stands relative to
+ * the content regardless of each side's anchor offset.
  */
 export class StreamChannel {
 	constructor(socketProvider) {

@@ -16,13 +16,16 @@ const CAMERA_FORWARD = new Vector3(0, 0, -1);
  * with SkeletonUtils.clone in case it is rigged; each clone's materials are
  * cloned and tinted with the headset's hex color.
  *
- * A pose places the figure's feet at (x, 0, z) with yaw-only orientation
- * (camera forward projected onto XZ — a standing figure doesn't pitch/roll
- * with the head). Figures stay hidden until their first pose, and are
- * hidden again when no pose arrives for ~1s (poses stop when immersion
- * ends, the page reloads, or the headset disconnects — no parking
- * positions). The origin reference figure from loadReferenceFigure is a
- * separate object and is left untouched.
+ * A pose arrives RELATIVE to the sender's sceneStage and is mapped back
+ * through this desktop's sceneStage world transform (position through
+ * matrixWorld, orientation composed as stageWorldQuat * relQuat), then the
+ * figure is placed with feet at (x, 0, z) of that world position and
+ * yaw-only orientation (transformed camera forward projected onto XZ — a
+ * standing figure doesn't pitch/roll with the head). Figures stay hidden
+ * until their first pose, and are hidden again when no pose arrives for ~1s
+ * (poses stop when immersion ends, the page reloads, or the headset
+ * disconnects — no parking positions). The origin reference figure from
+ * loadReferenceFigure is a separate object and is left untouched.
  */
 export class StreamFigures {
 	constructor(cg, { scene, figureUrl, fetchImpl } = {}) {
@@ -36,6 +39,8 @@ export class StreamFigures {
 		this._enabled = false;
 		this._unsubscribes = [];
 		this._poseQuaternion = new Quaternion();
+		this._poseStageQuaternion = new Quaternion();
+		this._posePosition = new Vector3();
 		this._poseForward = new Vector3();
 	}
 
@@ -133,10 +138,24 @@ export class StreamFigures {
 			if (this._enabled) this._ensureFigures();
 			return;
 		}
+		// Poses arrive RELATIVE to the sender's sceneStage (its anchor frame);
+		// map them back through THIS desktop's sceneStage world transform so
+		// the figure lands where the user stands relative to the content,
+		// regardless of each side's anchor offset.
 		const position = message.position ?? {};
-		figure.group.position.set(Number(position.x) || 0, 0, Number(position.z) || 0);
-		const q = message.quaternion ?? {};
-		this._poseQuaternion.set(Number(q.x) || 0, Number(q.y) || 0, Number(q.z) || 0, Number(q.w) || 1);
+		const sceneStage = this._cg?.sceneManager?.sceneStage ?? null;
+		if (sceneStage) {
+			this._posePosition
+				.set(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0)
+				.applyMatrix4(sceneStage.matrixWorld);
+			const q = message.quaternion ?? {};
+			this._poseQuaternion.set(Number(q.x) || 0, Number(q.y) || 0, Number(q.z) || 0, Number(q.w) || 1);
+			// worldQuat = stageWorldQuat * relQuat
+			this._poseQuaternion.premultiply(sceneStage.getWorldQuaternion(this._poseStageQuaternion));
+		} else {
+			this._posePosition.set(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0);
+		}
+		figure.group.position.set(this._posePosition.x, 0, this._posePosition.z);
 		this._poseForward.copy(CAMERA_FORWARD).applyQuaternion(this._poseQuaternion);
 		this._poseForward.y = 0;
 		if (this._poseForward.lengthSq() > 1e-6) {
