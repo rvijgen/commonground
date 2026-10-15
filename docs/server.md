@@ -28,7 +28,8 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
   `helperUrl` is the launch page address for the desktop HUD hint (null when the project runs no helper page);
   `color` passes through only when DOM-safe — ANSI SGR escape strings are stripped
 - `GET /api/headsets` — live per-headset overview for the desktop HUD:
-  `[{ id, label, connected, connectedDurationMs (null when disconnected),
+  `[{ id, label, color (configured hex color or null), connected,
+  connectedDurationMs (null when disconnected),
   immersedAt, immersedDurationMs (null until immersion enter), status
   (merged cg:status state or null), columns: string[] (only when columns
   are configured), anchor: 'anchored' | 'no-anchor' | 'unknown' }]`.

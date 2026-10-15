@@ -397,6 +397,7 @@ export async function createServer(options = {}) {
 			const entry = {
 				id: headset.id,
 				label: String(headset.label ?? `Headset ${headset.id}`),
+				color: typeof headset.color === 'string' ? headset.color : null,
 				connected,
 				connectedDurationMs: connected ? Math.max(0, Date.now() - presence.connectedAt) : null,
 				immersedAt,

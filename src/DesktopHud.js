@@ -299,6 +299,9 @@ export class DesktopHud {
 
 	_buildHeadsetCard(headset) {
 		const doc = this._doc;
+		// Hex-only, like the helper page: headset.color is config input that
+		// lands in a style attribute.
+		const color = /^#[0-9a-fA-F]{3,8}$/.test(String(headset.color ?? '')) ? headset.color : null;
 		const card = doc.createElement('div');
 		card.style.cssText = [
 			'display:flex',
@@ -306,15 +309,16 @@ export class DesktopHud {
 			'gap:4px',
 			'padding:8px 10px',
 			'border:1px solid rgba(255,255,255,0.18)',
+			color ? `border-left:4px solid ${color}` : null,
 			'border-radius:8px',
 			'min-width:150px',
 			'max-width:220px',
 			'background:rgba(255,255,255,0.04)',
-		].join(';');
+		].filter(Boolean).join(';');
 
 		const label = doc.createElement('div');
 		label.textContent = String(headset.label ?? `Headset ${headset.id}`);
-		label.style.cssText = 'font-weight:600;';
+		label.style.cssText = 'font-weight:600;' + (color ? `color:${color};` : '');
 		card.appendChild(label);
 
 		const connectionRow = doc.createElement('div');
