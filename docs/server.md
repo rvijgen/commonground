@@ -7,7 +7,7 @@ Anchors and room meshes are stored per **physical space**:
 <dataDir>/spaces/<spaceId>/mesh.json
 ```
 
-The CLI starts in the `Studio` space unless `--space <id>` or
+The CLI starts in the `default` space unless `--space <id>` or
 `config.space` says otherwise; the desktop HUD's Spaces tab can switch
 the active space at runtime:
 
@@ -181,7 +181,7 @@ current directory (default export); `--space` overrides `config.space`:
 
 ```js
 export default {
-	space: 'Studio',                  // CLI startup space (default 'Studio'); --space overrides
+	space: 'myspace',                 // CLI startup space (default 'default'); --space overrides
 	httpPort: 3001,
 	httpsPort: 3002,
 	dataDir: 'data',                  // resolved against cwd

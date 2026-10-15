@@ -83,10 +83,10 @@ if (command !== 'serve') {
 const cwd = process.cwd();
 const config = await loadConfig(cwd, args.config);
 
-// Startup space selection: --space flag > project config > 'Studio'.
+// Startup space selection: --space flag > project config > 'default'.
 // This is only the initial AnchorStore target — the desktop HUD's Spaces
 // tab can switch the active space at runtime.
-const spaceId = (args.space && String(args.space)) || config.space || 'Studio';
+const spaceId = (args.space && String(args.space)) || config.space || 'default';
 const httpPort = args['http-port'] ? Number(args['http-port']) : (Number(config.httpPort) || 3001);
 const httpsPort = args['https-port'] ? Number(args['https-port']) : (Number(config.httpsPort) || 3002);
 const dataDir = config.dataDir ? path.resolve(cwd, config.dataDir) : path.join(cwd, 'data');
