@@ -420,7 +420,14 @@ export class CommonGround {
     onCeilingHeightChanged(fn) { this._onCeilingHeightChanged = fn; }
 
     /** Register a callback for XR session start */
-    onSessionStart(fn) { this._onSessionStart = fn; }
+    onSessionStart(fn) {
+        this._onSessionStart = fn;
+        // Registered while a session is already presenting (e.g. from
+        // init().then() on a headset, where init() awaits ceiling detection
+        // that only happens in XR): fire immediately so late registrants
+        // don't miss the one-shot sessionstart event.
+        if (typeof fn === 'function' && this.renderer?.xr?.isPresenting) fn();
+    }
 
     /**
      * Re-frame the desktop orbit camera so the app's placed content fits the
@@ -845,6 +852,11 @@ export class CommonGround {
                 console.log('[CG] depthUsage:', _s.depthUsage, '| depthDataFormat:', _s.depthDataFormat);
                 if (this.controls) this.controls.enabled = false;
                 if (this.controllerManager) this.controllerManager.setupControllerGrips();
+
+                // Framework-stamped immersion: the server/dashboard default
+                // hasEnteredImmersion predicate keys on this field, so
+                // session timing and session logging work with no app wiring.
+                this.status.update({ enteredImmersion: true });
 
                 setTimeout(() => {
                     if (!this.sessionstarted) this._startSession();

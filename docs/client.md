@@ -43,9 +43,6 @@ cg.init().then(() => {
 	));
 	cg.addObject('cube', cube, new Vector3(0, 0.5, 0));
 
-	// Stamp immersion so dashboard session timing and HUD indicators work.
-	cg.onSessionStart(() => cg.status.update({ enteredImmersion: true }));
-
 	// Show the cg.sync channel: every other client hears the cube was added.
 	cg.sync.emit('demo-cube-added', { position: [0, 0.5, 0] });
 });
@@ -78,8 +75,9 @@ const off = cg.sync.on('tileGrab', (payload, { deviceId, at }) => {
 
 // cg.status — client-computed, server-remembered status. Partial updates
 // are shallow-merged per device on the server, broadcast to screens, and
-// fed to the dashboard/session logs.
-cg.status.update({ enteredImmersion: true });
+// fed to the dashboard/session logs. CommonGround itself stamps
+// { enteredImmersion: true } on XR session start, so dashboard session
+// timing works out of the box — apps only add their own fields.
 cg.status.update({ tileDraggedCount: 3 });   // merges with the above
 cg.status.onStatus(({ deviceId, state, at }) => { /* spectator pages */ });
 
@@ -272,7 +270,7 @@ cg.getFpsCounterEnabled();             // → effective boolean
 ## Event hooks
 
 - `onCeilingHeightChanged(fn)`: registers a callback for ceiling-height updates.
-- `onSessionStart(fn)`: registers a callback for XR session start.
+- `onSessionStart(fn)`: registers a callback for XR session start. Fires immediately if a session is already presenting, so registering from `init().then()` is safe (on headsets `init()` only resolves after in-XR ceiling detection). CommonGround also stamps `{ enteredImmersion: true }` to `cg.status` here.
 - `onSessionEnd(fn)`: registers a callback for XR session end.
 - `setDepthOverlay(overlay)`: registers an `XRDepthOverlay` instance.
 - `setDepthOcclusion(occlusion)`: registers an `XRDepthOcclusion` instance.
