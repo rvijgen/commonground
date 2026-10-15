@@ -177,7 +177,9 @@ It always also mounts the client library for no-build import maps:
 the node_modules root providing three/ratk (hoisting-safe).
 
 All settings are optional and come from `commonground.config.js` in the
-current directory (default export); `--space` overrides `config.space`:
+current directory (default export); `--space` overrides `config.space`.
+`examples/test-cube/commonground.config.js` is a minimal annotated template
+to copy into your own project:
 
 ```js
 export default {

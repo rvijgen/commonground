@@ -3,6 +3,14 @@ import { Mesh, BoxGeometry, MeshBasicMaterial, Vector3 } from 'three';
 
 const cg = new CommonGround();
 
+// The helper page's "Admin" links add ?admin=1: admin mode unlocks the
+// VR control panel (controller menu button) and turns the FPS counter on.
+cg.setAdminModeEnabled(new URLSearchParams(location.search).get('admin') === '1');
+
+// Startup look: room mesh on (it makes the shared alignment visible),
+// helpers and the VR control panel off until an admin opens the panel.
+cg.configure({ roomMesh: true, helpers: false, menu: false });
+
 cg.init().then(() => {
 	// A 1×1×1 m cube resting on the floor at the scene origin.
 	const cube = new Mesh(
