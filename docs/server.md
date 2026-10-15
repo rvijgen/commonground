@@ -277,10 +277,9 @@ them.
 ## Helper page defaults
 
 With `helperPage: {}` (or `true`) the launch page is fully generated:
-`CommonGround` → `/api/anchors` (certificate accept), one quick link per
-top-level route that has a `label` (routes without `label` are skipped),
-`Desktop` → `/`, and one row per configured headset holding a `{label}`
-launch link and a `Setup {label}` admin link
+one quick link per top-level route that has a `label` (routes without
+`label` are skipped), and one row per configured headset holding a
+`{label}` launch link and a `Setup {label}` admin link
 (`?deviceid={id}[&admin=1]`) — all against `https://{host}:<appHttpsPort>`.
 Buttons are color-coded with each headset's configured hex `color` (solid
 for launch, outline for Setup), and the heading defaults to

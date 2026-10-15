@@ -854,7 +854,8 @@ export function runDashboard(config = {}) {
 
 	// Default helper-page links, derived from the app's HTTPS port and the
 	// labeled top-level project routes. Empty when no appHttpsPort is known
-	// (e.g. standalone classic-mode dashboards).
+	// (e.g. standalone classic-mode dashboards) or no routes are labeled —
+	// the headset links below are the point of the launch page.
 	function helperBaseUrl() {
 		const port = Number(appHttpsPort);
 		return Number.isFinite(port) && port > 0 ? `https://{host}:${port}` : null;
@@ -863,14 +864,9 @@ export function runDashboard(config = {}) {
 	function defaultHelperLinks() {
 		const base = helperBaseUrl();
 		if (!base) return [];
-		const routeLinks = (Array.isArray(appRoutes) ? appRoutes : [])
+		return (Array.isArray(appRoutes) ? appRoutes : [])
 			.filter((route) => route && route.path && typeof route.label === 'string' && route.label.trim())
 			.map((route) => ({ label: String(route.label).trim(), href: `${base}${route.path}` }));
-		return [
-			{ label: 'CommonGround', href: `${base}/api/anchors` },
-			...routeLinks,
-			{ label: 'Desktop', href: `${base}/` },
-		];
 	}
 
 	function defaultHelperHeadsetLinks() {
