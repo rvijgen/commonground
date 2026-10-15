@@ -7,16 +7,14 @@ Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for
 
 ## What it does
 
-- **Shared spatial anchors** — anchor transforms and room meshes are stored per physical *space* on the server. Every headset that enters a space restores the scene at the same real-world position. Multiple spaces (room scans) are supported and switchable at runtime.
+- **Shared spacial Anchorings** — Set a spatial anchor once for each headset. Supports multiple spaces. 
 - **One server for everything** — `commonground serve` hosts your app's files, the anchor/mesh API, the socket relay, session logs and the dashboard in a single process. No app-specific server code needed.
 - **Cross-headset channels** — `cg.sync` (generic events relayed to every other headset), `cg.status` (per-device status merge store feeding dashboards and logs), and `cg.stream` (live headset poses at ~10 Hz).
-- **Desktop spectator view** — any browser shows the room mesh and placed content, with a HUD offering Headsets (presence, session time, status, anchor state), Spaces (select/create) and Session (sync/stream toggles, session log) tabs. While streaming, each immersed headset appears as a tinted human figure at its real position.
+- **Desktop spectator view** — any browser shows the room mesh and placed content, with a HUD offering Headsets (presence, session time, status, anchor state), Spaces (select/create) and Session (sync/stream toggles, session log) tabs. While streaming, each immersed headset appears as a human (color coded) figure at its real position.
 - **Terminal dashboard** — an alt-screen TUI with per-headset status columns, session timing and NDJSON session logging, plus a generated helper page that gives every headset (and the desktop view) a launch link.
 - **Configurable occlusion** — virtual content is realistically hidden behind real walls and furniture using the headset's depth sensing, with prepass/shader modes, per-object clear boxes, an adjustable bias and a debug depth overlay.
 - **In-headset tooling** — a VR control panel for grabbing and placing the scene, and an FPS counter.
 - **No build step required** — the client library is plain ES modules, served to your app with an import map; bundling is optional.
-
-
 
 ## Quick start
 
@@ -31,11 +29,12 @@ npm run demo
 example, the anchors/mesh API + socket channels, the alt-screen terminal
 dashboard (per-headset status, session timing), the generated helper launch
 page, and NDJSON session logs. The dashboard tells you the helper-page URL
-(port 80, or 3000 when unprivileged) — open it on a desktop or a Meta Quest
+(port 80, or 3000 when unprivileged) — open it on a desktop or a Headset (like Meta Quest)
 and pick a link, or go straight to `https://<your-machine>:3002/` (accept
 the self-signed dev certificate) for the desktop spectator view with the
-Headsets/Spaces/Session HUD. `npm run server` is the bare variant (API +
-example only, no dashboard).
+Headsets/Spaces/Session HUD. `npm run server` does the same thing;
+`npm run server:bare` is the minimal variant (API + example only, no
+dashboard).
 
 ## Documentation
 
