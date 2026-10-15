@@ -10,4 +10,10 @@ cg.init().then(() => {
 		new MeshBasicMaterial({ color: 0x2e7cf6 }),
 	);
 	cg.addObject('cube', cube, new Vector3(0, 0.5, 0));
+
+	// Stamp immersion so dashboard session timing and HUD indicators work.
+	cg.onSessionStart(() => cg.status.update({ enteredImmersion: true }));
+
+	// Show the cg.sync channel: every other client hears the cube was added.
+	cg.sync.emit('demo-cube-added', { position: [0, 0.5, 0] });
 });

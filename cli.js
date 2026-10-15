@@ -141,6 +141,7 @@ const server = await createServer({
 	httpPort,
 	httpsPort,
 	syncDefault,
+	serveExample: config.serveExample || false,
 	onLog: logLine,
 	headsets: config.dashboard && Array.isArray(config.dashboard.headsets) ? config.dashboard.headsets : [],
 	headsetColumns: Array.isArray(dashboardSection.columns) ? dashboardSection.columns : [],

@@ -1,6 +1,9 @@
 # Commonground
 
-Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for persistent, room-aware scene placement, built on Three.js + RATK. Multiple Meta Quest headsets join the same physical room: each headset stores and retrieves anchor points through a shared server, so every headset — and a desktop spectator view — sees the same virtual objects at the same physical positions, blended into the real room.
+Create a shared Mixed Reality Experience using Open Standards. 
+Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for persistent, room-aware scene placement, built on Three.js + RATK. Multiple Mixed Reality headsets (Like Meta Quest) join the same physical room: each headset sees the same virtual object at the same position in physical space. A desktop view shows the scene and the realtime position of users in the space, allows you to see what users see and logs session time and custom events.
+
+![Screenshot](assets/commonground.png)
 
 ## What it does
 
@@ -13,7 +16,7 @@ Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for
 - **In-headset tooling** — a VR control panel for grabbing and placing the scene, and an FPS counter.
 - **No build step required** — the client library is plain ES modules, served to your app with an import map; bundling is optional.
 
-![Screenshot](assets/commonground.png)
+
 
 ## Quick start
 
@@ -21,10 +24,18 @@ Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for
 git clone https://github.com/rvijgen/commonground.git
 cd commonground
 npm install
-npm run server
+npm run demo
 ```
 
-This starts the framework server (anchors/mesh API + socket channels) **and** serves the bundled test-cube example — no build step involved. Open `https://<your-machine>:3002/` on a desktop browser (accept the self-signed dev certificate) for the spectator view — or open the same URL on a Meta Quest and tap **Enter Commonground** to step into the same scene in XR.
+`npm run demo` is the full experience in one process: the bundled test-cube
+example, the anchors/mesh API + socket channels, the alt-screen terminal
+dashboard (per-headset status, session timing), the generated helper launch
+page, and NDJSON session logs. The dashboard tells you the helper-page URL
+(port 80, or 3000 when unprivileged) — open it on a desktop or a Meta Quest
+and pick a link, or go straight to `https://<your-machine>:3002/` (accept
+the self-signed dev certificate) for the desktop spectator view with the
+Headsets/Spaces/Session HUD. `npm run server` is the bare variant (API +
+example only, no dashboard).
 
 ## Documentation
 

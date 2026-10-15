@@ -189,6 +189,7 @@ export default {
 	sync: true,                       // built-in cg:sync channel
 	status: true,                     // built-in cg:status channel
 	syncDefault: true,                // client sync participation default (--sync/--no-sync override)
+	serveExample: true,               // serve the bundled example app (test-cube at / and /dev)
 	sessionLogTitle: 'Session Logs',  // title of the /commonground/logs viewer
 	routes: [{ path: '/screen', file: 'screen.html', label: 'Screen' }],  // label → helper-page quick link
 	staticDirs: [{ path: '/assets', dir: 'public/assets', indexFile: null }],

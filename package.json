@@ -47,6 +47,7 @@
 	},
 	"scripts": {
 		"build": "node scripts/run-webpack.js build",
+		"demo": "QUIET_LOGS=1 node cli.js serve",
 		"serve": "node scripts/run-webpack.js serve",
 		"server": "node server/server.js",
 		"server:transient": "COMMONGROUND_LOG_CLEAR_SECONDS=4 node server/server.js",
