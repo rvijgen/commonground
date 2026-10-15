@@ -11,7 +11,7 @@ This mirrors the `examples/test-cube/` entrypoint.
 
 ```js
 import { CommonGround } from 'commonground';
-import { Mesh, BoxGeometry, MeshBasicMaterial, Vector3 } from 'three';
+import { Group, Mesh, BoxGeometry, EdgesGeometry, LineSegments, LineBasicMaterial, MeshBasicMaterial, AdditiveBlending, Vector3 } from 'three';
 
 const cg = new CommonGround();
 
@@ -23,11 +23,24 @@ cg.setAdminModeEnabled(new URLSearchParams(location.search).get('admin') === '1'
 cg.configure({ menu: false });
 
 cg.init().then(() => {
-	// A 1×1×1 m cube resting on the floor at the scene origin.
-	const cube = new Mesh(
-		new BoxGeometry(1, 1, 1),
-		new MeshBasicMaterial({ color: 0x2e7cf6 }),
-	);
+	// A 1×1×1 m glowing white outline cube resting on the floor at the
+	// scene origin: bright edges plus a faint additive fill for the glow.
+	const geometry = new BoxGeometry(1, 1, 1);
+	const cube = new Group();
+	cube.add(new LineSegments(
+		new EdgesGeometry(geometry),
+		new LineBasicMaterial({ color: 0xffffff }),
+	));
+	cube.add(new Mesh(
+		geometry,
+		new MeshBasicMaterial({
+			color: 0xffffff,
+			transparent: true,
+			opacity: 0.06,
+			blending: AdditiveBlending,
+			depthWrite: false,
+		}),
+	));
 	cg.addObject('cube', cube, new Vector3(0, 0.5, 0));
 
 	// Stamp immersion so dashboard session timing and HUD indicators work.
@@ -40,7 +53,9 @@ cg.init().then(() => {
 
 `configure()` before `init()` adjusts startup visibility and features —
 e.g. `cg.configure({ roomMesh: false, helpers: false, menu: false,
-occlusion: true, occlusionMode: 'prepass' })`.
+occlusion: true, occlusionMode: 'prepass', background: '#0f172a' })`
+(`background` is the desktop clear color; XR always clears transparent
+for passthrough).
 
 ## Cross-headset channels (`cg.sync` / `cg.status` / `cg.stream`)
 

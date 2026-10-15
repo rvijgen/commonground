@@ -164,13 +164,17 @@ export class CommonGround {
 
         // Initial visibility config (applied before first render)
         this._initialConfig = { roomMesh: false, helpers: false, menu: true, occlusion: false, occlusionMode: 'prepass' };
+
+        // Desktop clear color (matches the HUD palette); XR ignores it —
+        // passthrough needs a transparent framebuffer.
+        this._backgroundColor = '#0f172a';
     }
 
     /**
      * Configure initial visibility before calling init().
      * Call this before init() to avoid a visible flash.
      */
-    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, desktopFigure, fpsCounter } = {}) {
+    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, desktopFigure, fpsCounter, background } = {}) {
         if (roomMesh !== undefined) this._initialConfig.roomMesh = roomMesh;
         if (helpers !== undefined) {
             this._initialConfig.helpers = helpers;
@@ -196,6 +200,7 @@ export class CommonGround {
             this._fpsCounterMode = fpsCounter;
             this._applyFpsCounterPreference();
         }
+        if (background !== undefined) this._backgroundColor = background;
         if (apiBase !== undefined || anchorsEndpoint !== undefined || meshEndpoint !== undefined) {
             this._setApiConfig({ apiBase, anchorsEndpoint, meshEndpoint });
         }
@@ -678,6 +683,7 @@ export class CommonGround {
         document.body.appendChild(this.renderer.domElement);
 
         if (this.isDesktopMode) {
+            this.renderer.setClearColor(this._backgroundColor, 1);
             this.desktop = new Desktop(this.camera, this.renderer);
             this.desktop.setupOrbitControls();
             this.controls = this.desktop.controls;

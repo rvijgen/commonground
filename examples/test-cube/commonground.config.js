@@ -20,6 +20,8 @@ export default {
 		headsets: [
 			{ id: 1, label: 'Headset 1', color: '#e6533c' },
 			{ id: 2, label: 'Headset 2', color: '#3ca9e6' },
+			{ id: 3, label: 'Headset 3', color: '#57c785' },
+			{ id: 4, label: 'Headset 4', color: '#e6c93c' },
 		],
 		// Declares the status shape your app sends via cg.status.update();
 		// derives the default status and the session-log entry.
