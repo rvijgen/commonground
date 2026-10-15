@@ -28,6 +28,7 @@
 		"dashboard",
 		"examples",
 		"assets",
+		"docs",
 		"README.md"
 	],
 	"devDependencies": {
