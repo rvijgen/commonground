@@ -21,6 +21,7 @@ import {
     MeshStandardMaterial,
     NearestFilter,
     PerspectiveCamera,
+    PlaneGeometry,
     Quaternion,
     Scene,
     ShaderMaterial,
@@ -757,6 +758,28 @@ export class CommonGround {
         console.log('XR scene content added to Three.js scene');
     }
 
+    // Desktop-only floor: a 7×7 m black plane at 20% opacity under the
+    // content, child of the sceneStage so the desktop anchor restore places
+    // it with the content. Slightly raised and polygon-offset to avoid
+    // z-fighting with the room mesh floor. Never added in XR sessions.
+    _addDesktopFloorPlane() {
+        const geometry = new PlaneGeometry(7, 7);
+        const material = new MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.2,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+        });
+        const floor = new Mesh(geometry, material);
+        floor.name = 'DesktopFloorPlane';
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = 0.005;
+        this.sceneManager.sceneStage.add(floor);
+    }
+
     _setupRATK() {
         this.ratk = new RealityAccelerator(this.renderer.xr);
         this.ratk.onPlaneAdded = this._handlePlaneAdded.bind(this);
@@ -779,9 +802,10 @@ export class CommonGround {
                 // to show all placed objects (not the room mesh) instead of
                 // a close-up.
                 .then(() => this.frameDesktopView());
-            if (this._desktopFigureUrl) {
-                this.desktop.loadReferenceFigure(this.scene, this._desktopFigureUrl);
-            }
+            // Desktop floor plane: a subtle dark ground under the content,
+            // added to the sceneStage so the desktop anchor restore places
+            // it with the content. Desktop-only — never in XR sessions.
+            this._addDesktopFloorPlane();
             // cg.stream pose figures: one tinted figure per configured
             // headset, shown while its headset streams poses (desktop only —
             // immersed pages send poses, they don't render figures).
