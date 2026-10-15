@@ -1,9 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
-import webpack from 'webpack';
-
-const { DefinePlugin } = webpack;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -71,9 +68,6 @@ export default {
 			inject: 'body',
 			scriptLoading: 'blocking',
 			minify: false
-		}),
-		new DefinePlugin({
-			'process.env.VIDEO_URL': JSON.stringify(process.env.VIDEO_URL || '/test-video'),
 		}),
 	],
 	devtool: 'source-map',

@@ -11,21 +11,23 @@ This mirrors the `examples/test-cube/` entrypoint.
 
 ```js
 import { CommonGround } from 'commonground';
-import { Mesh, BoxGeometry, Vector3 } from 'three';
+import { Mesh, BoxGeometry, MeshBasicMaterial, Vector3 } from 'three';
 
 const cg = new CommonGround();
-cg.configure({ roomMesh: false, helpers: false, menu: false, occlusion: true, occlusionMode: 'prepass', overlay: true });
 
 cg.init().then(() => {
-	const h = cg.getCeilingHeight();
+	// A 1×1×1 m cube resting on the floor at the scene origin.
 	const cube = new Mesh(
-		new BoxGeometry(0.2, h, 0.2),
-		cg.getOcclusionMaterial(),
+		new BoxGeometry(1, 1, 1),
+		new MeshBasicMaterial({ color: 0x2e7cf6 }),
 	);
-	cube.frustumCulled = false;
-	cg.addObject('myCube', cube, new Vector3(0, h / 2, 0));
+	cg.addObject('cube', cube, new Vector3(0, 0.5, 0));
 });
 ```
+
+`configure()` before `init()` adjusts startup visibility and features —
+e.g. `cg.configure({ roomMesh: false, helpers: false, menu: false,
+occlusion: true, occlusionMode: 'prepass' })`.
 
 ## Cross-headset channels (`cg.sync` / `cg.status` / `cg.stream`)
 
