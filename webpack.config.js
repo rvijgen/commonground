@@ -50,6 +50,11 @@ export default {
 		},
 	},
 	resolve: {
+		alias: {
+			// Lets the example import 'commonground' like an installed app
+			// would; resolves to the in-repo client library.
+			commonground: path.resolve(__dirname, 'src', 'CommonGround.js'),
+		},
 		fallback: {
 			"fs": false,
 			"path": false,

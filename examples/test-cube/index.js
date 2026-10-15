@@ -1,4 +1,4 @@
-import { CommonGround } from '../../src/CommonGround.js';
+import { CommonGround } from 'commonground';
 import { Group, Mesh, BoxGeometry, EdgesGeometry, LineSegments, LineBasicMaterial, MeshBasicMaterial, AdditiveBlending, Vector3 } from 'three';
 
 const cg = new CommonGround();

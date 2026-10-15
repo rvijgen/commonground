@@ -2,12 +2,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { createServer, attachSocketRelay } from './server/index.js';
 import { runDashboard, createStatusFromFields } from './dashboard/index.js';
-
-const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 
 function parseArgs(argv) {
 	const args = { _: [] };
@@ -38,22 +35,6 @@ async function loadConfig(cwd, explicitPath) {
 	}
 	const configModule = await import(pathToFileURL(configPath).href);
 	return configModule.default ?? configModule ?? {};
-}
-
-// Resolve the node_modules root that provides the client library's three/
-// ratk/troika-three-text, robust to npm hoisting in consuming workspaces.
-function resolveVendorNodeModulesDir() {
-	const packageJsonPath = path.join(PACKAGE_ROOT, 'package.json');
-	const commongroundRequire = createRequire(packageJsonPath);
-	for (const packageName of ['three', 'ratk', 'troika-three-text']) {
-		try {
-			// <node_modules>/<package>/package.json → <node_modules>
-			return path.dirname(path.dirname(commongroundRequire.resolve(`${packageName}/package.json`)));
-		} catch (_error) {
-			// try the next package
-		}
-	}
-	return path.join(PACKAGE_ROOT, 'node_modules');
 }
 
 function printHelp() {
@@ -103,8 +84,6 @@ const syncDefault = args['no-sync'] ? false
 const sessionLogFile = config.dashboard && typeof config.dashboard.sessionLogFile === 'string'
 	? path.resolve(cwd, config.dashboard.sessionLogFile)
 	: path.join(dataDir, 'logs', 'headset-sessions.ndjson');
-
-const vendorNodeModulesDir = resolveVendorNodeModulesDir();
 
 let dashboard = null;
 // Informational lines go through the dashboard's log sink once it exists, so
@@ -161,12 +140,8 @@ const server = await createServer({
 		}
 	},
 	apps: [
-		// No-build import-map mounts for the commonground client library.
-		{ path: '/commonground/src', staticDir: path.join(PACKAGE_ROOT, 'src') },
-		{ path: '/commonground/node_modules', staticDir: vendorNodeModulesDir },
-		// Bundled assets (desktop reference figure, …).
-		{ path: '/commonground/assets', staticDir: path.join(PACKAGE_ROOT, 'assets') },
-		// The app itself.
+		// The app itself (/commonground/src, /commonground/node_modules and
+		// /commonground/assets are always-on mounts inside createServer).
 		{ path: '/', staticDir: cwd },
 		...staticDirs
 			.filter((entry) => entry && entry.path && (entry.staticDir || entry.dir))
@@ -217,7 +192,6 @@ if (typeof config.setupRelay === 'function') {
 
 server.listen();
 logLine(`Serving ${cwd} (space: ${server.spaceId})`);
-logLine(`Client library mounts: /commonground/src, /commonground/node_modules (${vendorNodeModulesDir})`);
 
 let shuttingDown = false;
 function shutdown() {

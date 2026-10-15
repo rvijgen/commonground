@@ -8,10 +8,28 @@ import https from 'node:https';
 import http from 'node:http';
 import os from 'node:os';
 import { format } from 'node:util';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { AnchorStore } from './AnchorStore.js';
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// The node_modules root that provides three/ratk for no-build import maps.
+// Resolved through the package's own dependencies so it keeps working when
+// commonground is installed as a dependency (hoisted or nested).
+function resolveVendorNodeModulesDir() {
+	const packageJsonPath = path.join(PACKAGE_ROOT, 'package.json');
+	const commongroundRequire = createRequire(packageJsonPath);
+	for (const packageName of ['three', 'ratk', 'troika-three-text']) {
+		try {
+			// <node_modules>/<package>/package.json → <node_modules>
+			return path.dirname(path.dirname(commongroundRequire.resolve(`${packageName}/package.json`)));
+		} catch (_error) {
+			// try the next package
+		}
+	}
+	return path.join(PACKAGE_ROOT, 'node_modules');
+}
 
 const TRANSIENT_LOG_SECONDS = Number.parseFloat(process.env.COMMONGROUND_LOG_CLEAR_SECONDS || '0');
 const TRANSIENT_LOG_FORCE = process.env.COMMONGROUND_LOG_CLEAR_FORCE === '1';
@@ -475,8 +493,18 @@ export async function createServer(options = {}) {
 		extraRoutes(app, { store, spaceId: store.spaceId });
 	}
 
+	// Client library no-build mounts — always on, so any import-map page can
+	// use /commonground/src and /commonground/node_modules no matter how the
+	// server was started (CLI, createServer, bare example server).
+	const vendorNodeModulesDir = resolveVendorNodeModulesDir();
+	const defaultApps = [
+		{ path: '/commonground/src', staticDir: path.join(PACKAGE_ROOT, 'src') },
+		{ path: '/commonground/node_modules', staticDir: vendorNodeModulesDir },
+		{ path: '/commonground/assets', staticDir: path.join(PACKAGE_ROOT, 'assets') },
+	];
+
 	// Additional apps mounted at subpaths
-	for (const mounted of apps) {
+	for (const mounted of [...defaultApps, ...apps]) {
 		if (!mounted || !mounted.path || !mounted.staticDir) continue;
 		const staticDir = path.resolve(mounted.staticDir);
 		app.use(mounted.path, express.static(staticDir));
@@ -509,6 +537,10 @@ export async function createServer(options = {}) {
 		app.get(['/dev', '/dev/'], (req, res) => {
 			res.sendFile(devIndex);
 		});
+
+		// The example dir itself at / so the page's relative script
+		// (./index.js) resolves; falls through to dist/ for built files.
+		app.use(express.static(path.join(exampleRoot, 'examples', 'test-cube')));
 
 		// Serve the built example from dist/
 		app.use(express.static(distDir));

@@ -33,14 +33,15 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "/node_modules/three/build/three.module.js",
-					"three/": "/node_modules/three/",
-					"ratk": "/node_modules/ratk/build/ratk.module.js",
-					"troika-three-text": "/node_modules/troika-three-text/dist/troika-three-text.esm.js",
-					"troika-worker-utils": "/node_modules/troika-worker-utils/dist/troika-worker-utils.esm.js",
-					"troika-three-utils": "/node_modules/troika-three-utils/dist/troika-three-utils.esm.js",
-					"webgl-sdf-generator": "/node_modules/webgl-sdf-generator/dist/webgl-sdf-generator.mjs",
-					"bidi-js": "/node_modules/bidi-js/dist/bidi.mjs"
+					"commonground": "/commonground/src/CommonGround.js",
+					"three": "/commonground/node_modules/three/build/three.module.js",
+					"three/": "/commonground/node_modules/three/",
+					"ratk": "/commonground/node_modules/ratk/build/ratk.module.js",
+					"troika-three-text": "/commonground/node_modules/troika-three-text/dist/troika-three-text.esm.js",
+					"troika-worker-utils": "/commonground/node_modules/troika-worker-utils/dist/troika-worker-utils.esm.js",
+					"troika-three-utils": "/commonground/node_modules/troika-three-utils/dist/troika-three-utils.esm.js",
+					"webgl-sdf-generator": "/commonground/node_modules/webgl-sdf-generator/dist/webgl-sdf-generator.mjs",
+					"bidi-js": "/commonground/node_modules/bidi-js/dist/bidi.mjs"
 				}
 			}
 		</script>
@@ -48,6 +49,6 @@
 	<body>
 		<div id="scene-container"></div>
 		<button id="ar-button"></button>
-		<script type="module" src="/examples/test-cube/index.js"></script>
+		<script type="module" src="./index.js"></script>
 	</body>
 </html>

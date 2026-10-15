@@ -25,16 +25,21 @@ npm install
 npm run demo
 ```
 
-`npm run demo` is the full experience in one process: the bundled test-cube
-example, the anchors/mesh API + socket channels, the alt-screen terminal
-dashboard (per-headset status, session timing), the generated helper launch
-page, and NDJSON session logs. The dashboard tells you the helper-page URL
+`npm run demo` runs the bundled example project (`examples/test-cube/`) the
+same way your own app would run: the CLI starts from that directory, reads
+its `commonground.config.js`, and stores runtime data (anchors, session
+logs) in `examples/test-cube/data/`. You get the full experience in one
+process: the example app, the anchors/mesh API + socket channels, the
+alt-screen terminal dashboard (per-headset status, session timing), the
+generated helper launch page, and NDJSON session logs. The dashboard tells
+you the helper-page URL
 (port 80, or 3000 when unprivileged) — open it on a desktop or a Headset (like Meta Quest)
 and pick a link, or go straight to `https://<your-machine>:3002/` (accept
 the self-signed dev certificate) for the desktop spectator view with the
 Headsets/Spaces/Session HUD. `npm run server` does the same thing;
 `npm run server:bare` is the minimal variant (API + example only, no
-dashboard).
+dashboard). To start your own project, copy `examples/test-cube/` and work
+from there.
 
 ## Documentation
 

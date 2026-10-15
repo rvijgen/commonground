@@ -178,8 +178,9 @@ the node_modules root providing three/ratk (hoisting-safe).
 
 All settings are optional and come from `commonground.config.js` in the
 current directory (default export); `--space` overrides `config.space`.
-`examples/test-cube/commonground.config.js` is a minimal annotated template
-to copy into your own project:
+`examples/test-cube/` is a complete runnable project — the repo's
+`npm run demo` starts the CLI from there — and its config doubles as an
+annotated template to copy into your own project:
 
 ```js
 export default {

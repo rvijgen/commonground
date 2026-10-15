@@ -1,11 +1,13 @@
-// Minimal CommonGround project configuration — the starting point for your
-// own app. Copy it next to your index.html and run `npx commonground serve`
-// (or `commonground serve` after `npm install commonground`) from that
-// directory; the CLI picks this file up automatically.
+// CommonGround project configuration — this is a complete, runnable project.
 //
-// Note: this file is NOT read by `npm run demo` in the framework repo —
-// that runs from the repo root, where the root commonground.config.js
-// applies. All settings optional — see docs/server.md for the reference.
+// In the framework repo, `npm run demo` runs the CLI from THIS directory, so
+// this file drives the demo and runtime data (anchors, session logs) lands in
+// ./data here, dev certificates in ./.certs.
+//
+// For your own app: copy this directory, adjust the settings below, and run
+// `npx commonground serve` (or `commonground serve` after
+// `npm install commonground`) from it — the CLI picks this file up
+// automatically. All settings optional — see docs/server.md for the reference.
 export default {
 	space: 'default',
 	httpPort: 3001,

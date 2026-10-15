@@ -49,7 +49,7 @@
 		"build": "node scripts/run-webpack.js build",
 		"demo": "npm run server",
 		"serve": "node scripts/run-webpack.js serve",
-		"server": "QUIET_LOGS=1 node cli.js serve",
+		"server": "cd examples/test-cube && QUIET_LOGS=1 node ../../cli.js serve",
 		"server:bare": "node server/server.js",
 		"server:transient": "COMMONGROUND_LOG_CLEAR_SECONDS=4 node server/server.js",
 		"server:transient:force": "COMMONGROUND_LOG_CLEAR_SECONDS=4 COMMONGROUND_LOG_CLEAR_FORCE=1 node server/server.js",
