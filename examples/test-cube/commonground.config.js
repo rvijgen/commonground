@@ -9,12 +9,6 @@
 // `npm install commonground`) from it — the CLI picks this file up
 // automatically. All settings optional — see docs/server.md for the reference.
 export default {
-	space: 'default',
-	httpPort: 3001,
-	httpsPort: 3002,
-	dataDir: 'data',
-	certDir: '.certs',
-
 	dashboard: {
 		title: 'Test Cube',
 		// One entry per headset. `color` (hex) is used across the TUI, the
