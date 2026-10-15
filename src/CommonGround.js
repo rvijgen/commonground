@@ -163,7 +163,7 @@ export class CommonGround {
         this._setApiConfig(options);
 
         // Initial visibility config (applied before first render)
-        this._initialConfig = { roomMesh: true, helpers: false, menu: true, occlusion: false, occlusionMode: 'prepass' };
+        this._initialConfig = { roomMesh: false, helpers: false, menu: true, occlusion: false, occlusionMode: 'prepass' };
     }
 
     /**

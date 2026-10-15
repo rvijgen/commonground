@@ -19,8 +19,8 @@ const cg = new CommonGround();
 // VR control panel (controller menu button) and turns the FPS counter on.
 cg.setAdminModeEnabled(new URLSearchParams(location.search).get('admin') === '1');
 
-// Startup look: room mesh on, helpers and the VR control panel off.
-cg.configure({ roomMesh: true, helpers: false, menu: false });
+// Startup look: VR control panel hidden until an admin opens it.
+cg.configure({ menu: false });
 
 cg.init().then(() => {
 	// A 1×1×1 m cube resting on the floor at the scene origin.
