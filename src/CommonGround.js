@@ -165,9 +165,10 @@ export class CommonGround {
         // Initial visibility config (applied before first render)
         this._initialConfig = { roomMesh: false, helpers: false, menu: true, occlusion: false, occlusionMode: 'prepass' };
 
-        // Desktop clear color (matches the HUD palette); XR ignores it —
-        // passthrough needs a transparent framebuffer.
-        this._backgroundColor = '#0f172a';
+        // Desktop clear color (a lighter slate; the HUD panels stay dark
+        // chrome on top of it). XR ignores it — passthrough needs a
+        // transparent framebuffer.
+        this._backgroundColor = '#334155';
     }
 
     /**

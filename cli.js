@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { createServer, attachSocketRelay } from './server/index.js';
 import { runDashboard, createStatusFromFields } from './dashboard/index.js';
@@ -38,7 +39,7 @@ async function loadConfig(cwd, explicitPath) {
 }
 
 function printHelp() {
-	console.log('Usage: commonground serve [--space <id>] [--config <path>] [--http-port <port>] [--https-port <port>] [--sync|--no-sync]');
+	console.log('Usage: commonground serve [--space <id>] [--config <path>] [--http-port <port>] [--https-port <port>] [--sync|--no-sync] [--open]');
 	console.log('');
 	console.log('Serves the current directory plus the CommonGround anchor/mesh API, the');
 	console.log('cg.sync/cg.status socket channels, and (when configured) the dashboard.');
@@ -189,6 +190,20 @@ relay = attachSocketRelay(
 
 if (typeof config.setupRelay === 'function') {
 	config.setupRelay(relay);
+}
+
+// --open flag (or openBrowser: true in config): launch the desktop view in
+// the default browser once the HTTP server is up. Plain HTTP — a local
+// spectator page shouldn't hit the self-signed certificate prompt.
+if (args.open === true || args.open === '1' || args.open === 'true' || config.openBrowser === true) {
+	server.httpServer.once('listening', () => {
+		const url = `http://localhost:${httpPort}/`;
+		const opener = process.platform === 'darwin' ? 'open'
+			: process.platform === 'win32' ? 'cmd' : 'xdg-open';
+		const openerArgs = process.platform === 'win32' ? ['/c', 'start', '""', url] : [url];
+		spawn(opener, openerArgs, { detached: true, stdio: 'ignore' }).unref();
+		logLine(`Desktop view opened at ${url}`);
+	});
 }
 
 server.listen();

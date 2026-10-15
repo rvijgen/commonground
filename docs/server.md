@@ -172,8 +172,11 @@ The package ships a config-driven CLI (`"bin": { "commonground": "cli.js" }`).
 In any app directory:
 
 ```bash
-npx commonground serve [--space <id>] [--config <path>] [--http-port <port>] [--https-port <port>]
+npx commonground serve [--space <id>] [--config <path>] [--http-port <port>] [--https-port <port>] [--open]
 ```
+
+`--open` launches the desktop view (`http://localhost:<httpPort>/`) in the
+default browser once the server is up.
 
 With **no config at all** it serves the current directory at `/`, the
 anchors/mesh API, and the cg.sync/cg.status socket channels — no dashboard.
@@ -197,6 +200,8 @@ export default {
 	sync: true,                       // built-in cg:sync channel
 	status: true,                     // built-in cg:status channel
 	syncDefault: true,                // client sync participation default (--sync/--no-sync override)
+	streamDefault: true,              // initial cg:stream pose-sharing toggle state
+	openBrowser: false,               // open the desktop view on startup (--open overrides)
 	serveExample: true,               // serve the bundled example app (test-cube at / and /dev)
 	sessionLogTitle: 'Session Logs',  // title of the /commonground/logs viewer
 	routes: [{ path: '/screen', file: 'screen.html', label: 'Screen' }],  // label → helper-page quick link

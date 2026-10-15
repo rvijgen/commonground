@@ -50,9 +50,9 @@ cg.init().then(() => {
 
 `configure()` before `init()` adjusts startup visibility and features —
 e.g. `cg.configure({ roomMesh: false, helpers: false, menu: false,
-occlusion: true, occlusionMode: 'prepass', background: '#0f172a' })`
-(`background` is the desktop clear color; XR always clears transparent
-for passthrough).
+occlusion: true, occlusionMode: 'prepass', background: '#334155' })`
+(`background` is the desktop clear color, `#334155` by default; XR always
+clears transparent for passthrough).
 
 ## Cross-headset channels (`cg.sync` / `cg.status` / `cg.stream`)
 
