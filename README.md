@@ -24,7 +24,7 @@ npm install
 npm run server
 ```
 
-Open `https://<your-machine>:3002/` on a desktop browser (accept the self-signed dev certificate) for the spectator view of the example cube — or open the same URL on a Meta Quest and tap **Enter Commonground** to step into the same scene in XR.
+This starts the framework server (anchors/mesh API + socket channels) **and** serves the bundled test-cube example — no build step involved. Open `https://<your-machine>:3002/` on a desktop browser (accept the self-signed dev certificate) for the spectator view — or open the same URL on a Meta Quest and tap **Enter Commonground** to step into the same scene in XR.
 
 ## Documentation
 
