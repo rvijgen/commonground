@@ -82,7 +82,8 @@ cg.status.update({ tileDraggedCount: 3 });   // merges with the above
 cg.status.onStatus(({ deviceId, state, at }) => { /* spectator pages */ });
 
 // cg.stream — one shared "stream headset poses" toggle (server-side state,
-// default off). Any non-screen client may flip it; the new state is
+// on by default; projects can start it off with streamDefault: false). Any
+// non-screen client may flip it; the new state is
 // broadcast to every client and pushed to late joiners on connect. While
 // on, immersed pages (renderer.xr.isPresenting) send their camera world
 // pose at ~10 Hz from the render loop — desktops never present, so they
@@ -176,7 +177,7 @@ subpath-served pages keep working. Disable it with
   tab's anchor state refers to the newly selected space.
 - **Session**: the sync on/off toggle (`cg.sync.enabled`, runtime switch),
   the **Stream** toggle (`cg.stream`, shared server-side switch, default
-  off), and a Session Log button that opens the integrated viewer
+  on), and a Session Log button that opens the integrated viewer
   (`commonground/logs`) in an iframe overlay (X, ESC or backdrop click to
   close).
 

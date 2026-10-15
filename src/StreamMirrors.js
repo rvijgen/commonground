@@ -46,9 +46,11 @@ export function divRectToCanvasScissor(divRect, canvasRect, canvasWidth, canvasH
  * Rendering reuses the main WebGLRenderer: per frame, each open window with
  * a fresh pose is rendered into the canvas rectangle behind its div via
  * setViewport/setScissor(+setScissorTest); the full-canvas viewport/scissor
- * state is restored afterwards so the main orbit view is unaffected. When
- * no pose has arrived for ~1.5 s the window shows a dim "not immersed"
- * placeholder instead of a frozen frame.
+ * state is restored afterwards so the main orbit view is unaffected. The
+ * watched headset's own stream figure is hidden for its render (the camera
+ * sits inside its head); other figures stay visible. When no pose has
+ * arrived for ~1.5 s the window shows a dim "not immersed" placeholder
+ * instead of a frozen frame.
  */
 export class StreamMirrors {
 	constructor(cg, { scene, renderer, doc, fetchImpl } = {}) {
@@ -289,7 +291,15 @@ export class StreamMirrors {
 			state.camera.updateProjectionMatrix();
 			this._renderer.setViewport(scissor.x, scissor.y, scissor.width, scissor.height);
 			this._renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+			// Hide the watched headset's OWN stream figure for this render:
+			// the mirror camera sits inside its head, so it would otherwise
+			// fill the view with clipped mesh. Other headsets' figures stay
+			// visible — seeing them is the point. Restored right after.
+			const ownFigure = this._cg?._streamFigures?.getFigureGroup?.(state.deviceId) ?? null;
+			const ownFigureWasVisible = ownFigure ? ownFigure.visible : null;
+			if (ownFigure) ownFigure.visible = false;
 			this._renderer.render(this._scene, state.camera);
+			if (ownFigure) ownFigure.visible = ownFigureWasVisible;
 		}
 
 		if (rendering) {

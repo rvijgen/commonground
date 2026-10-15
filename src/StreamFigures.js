@@ -175,6 +175,11 @@ export class StreamFigures {
 		this._figures.clear();
 	}
 
+	/** The scene group for a headset's figure, or null when not built yet. */
+	getFigureGroup(deviceId) {
+		return this._figures.get(Number(deviceId))?.group ?? null;
+	}
+
 	dispose() {
 		for (const unsubscribe of this._unsubscribes.splice(0)) {
 			unsubscribe();

@@ -104,6 +104,7 @@ export function attachSocketRelay(servers, options = {}) {
 		sync = true,
 		status = true,
 		stream = true,
+		streamDefault = true,
 		onLog = null,
 		hasEnteredImmersion = (state) => Boolean(state?.enteredImmersion),
 	} = options;
@@ -124,8 +125,9 @@ export function attachSocketRelay(servers, options = {}) {
 	let nextClientOrdinal = 1;
 	const statusChannels = [];
 	const coreStatusStates = new Map();
-	// cg.stream: one shared pose-streaming toggle per relay.
-	let streamEnabled = false;
+	// cg.stream: one shared pose-streaming toggle per relay. On by default
+	// (streamDefault option; projects set streamDefault: false to start off).
+	let streamEnabled = streamDefault !== false;
 	// cg:watch: per-device watcher registration (ref-counted across sockets,
 	// so several desktop pages can watch the same headset). A device that is
 	// watched streams poses even while the shared stream toggle is off.

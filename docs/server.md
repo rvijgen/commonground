@@ -103,6 +103,10 @@ on either protocol share one event stream. Two generic channels are built in
   logs `[status] {"deviceId":N,"state":{...},"at":ms}` (dashboard contract),
   and broadcasts `{ deviceId, state, at }` to all clients. Disconnect clears
   the device entry.
+- **`cg:stream` / `cg:pose`** — shared pose-streaming toggle (on by default;
+  `streamDefault: false` to start off) plus the high-rate pose fan-out.
+  Poses are forwarded while streaming is on, or while a device has `cg:watch`
+  watchers (desktop mirror windows), and are never logged.
 
 ```js
 import { createServer, attachSocketRelay } from 'commonground/server';
@@ -118,6 +122,7 @@ const relay = attachSocketRelay(
 		quiet: false,          // gates [socket] <event> relay logs
 		sync: true,            // built-in cg:sync channel
 		status: true,          // built-in cg:status channel
+		streamDefault: true,   // initial cg:stream toggle state
 		onLog: (line) => {},   // sink for structured lines ([socket:...]/[status]...);
 		                       // pass dashboard.writeLogLine for in-process dashboards
 		hasEnteredImmersion: (state) => Boolean(state?.enteredImmersion),  // default;
