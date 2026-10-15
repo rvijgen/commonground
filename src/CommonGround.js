@@ -43,6 +43,7 @@ import { SyncChannel } from './SyncChannel.js';
 import { StatusChannel } from './StatusChannel.js';
 import { StreamChannel } from './StreamChannel.js';
 import { StreamFigures } from './StreamFigures.js';
+import { StreamMirrors } from './StreamMirrors.js';
 import { DesktopHud } from './DesktopHud.js';
 import { FPSCounter, resolveFpsCounterEnabled } from './FPSCounter.js';
 
@@ -139,6 +140,7 @@ export class CommonGround {
         this._poseSenderQuaternion = new Quaternion();
         this._poseStageQuaternion = new Quaternion();
         this._streamFigures = null;
+        this.streamMirrors = null;
 
         // Desktop-only DOM overlay (sync toggle + session logs link)
         this._desktopHudEnabled = options.desktopHud !== false;
@@ -814,6 +816,13 @@ export class CommonGround {
                 figureUrl: this._desktopFigureUrl,
             });
             this._streamFigures.start();
+            // cg.stream mirror windows: "view from headset" floating renders
+            // driven by watched headsets' poses (desktop only).
+            this.streamMirrors = new StreamMirrors(this, {
+                scene: this.scene,
+                renderer: this.renderer,
+            });
+            this.streamMirrors.start();
         }
 
         if (navigator.xr) {
@@ -1599,15 +1608,19 @@ export class CommonGround {
             this._fpsCounter.update(performance.now());
         }
 
-        // cg.stream pose sender: only while the shared toggle is on AND this
-        // page is immersed (desktops never present, so they never send).
-        // Throttled to ~10 Hz; the relay stamps deviceId/at and fans out.
+        // cg.stream pose sender: only while this page is immersed (desktops
+        // never present, so they never send) AND poses are wanted — the
+        // shared stream toggle is on, or this device is being watched by a
+        // desktop mirror window. Throttled to ~10 Hz; the relay stamps
+        // deviceId/at and fans out.
         // The pose is sent RELATIVE to this headset's sceneStage (the anchor
         // frame the content is aligned through): each side's tracking-space
         // origin differs by its anchor offset, so a raw world pose would land
         // the desktop figure ~that offset away from the user. The receiver
         // maps the relative pose back through its own sceneStage.
-        if (this.stream.enabled && this.renderer.xr.isPresenting) {
+        const poseWanted = this.stream.enabled
+            || (this._deviceId != null && this.stream.isWatched(this._deviceId));
+        if (poseWanted && this.renderer.xr.isPresenting) {
             const now = performance.now();
             if (now - this._lastPoseSentAt >= 100) {
                 this._lastPoseSentAt = now;
@@ -1631,6 +1644,12 @@ export class CommonGround {
         // Hide stream figures whose headset stopped posing (immersion ended).
         if (this._streamFigures) {
             this._streamFigures.update();
+        }
+
+        // Mirror windows ("view from headset"): scissor-render open windows
+        // with fresh poses into their canvas rectangles (desktop only).
+        if (this.streamMirrors) {
+            this.streamMirrors.render();
         }
 
         // Debug depth overlay AFTER renderer.render() — raw GL calls and

@@ -1,6 +1,7 @@
 import { Color, Quaternion, Vector3 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadFigureTemplate } from './FigureLoader.js';
+import { mapStreamPoseToWorld } from './StreamPose.js';
 
 const POSE_TIMEOUT_MS = 1000;
 const CAMERA_FORWARD = new Vector3(0, 0, -1);
@@ -39,7 +40,6 @@ export class StreamFigures {
 		this._enabled = false;
 		this._unsubscribes = [];
 		this._poseQuaternion = new Quaternion();
-		this._poseStageQuaternion = new Quaternion();
 		this._posePosition = new Vector3();
 		this._poseForward = new Vector3();
 	}
@@ -142,19 +142,8 @@ export class StreamFigures {
 		// map them back through THIS desktop's sceneStage world transform so
 		// the figure lands where the user stands relative to the content,
 		// regardless of each side's anchor offset.
-		const position = message.position ?? {};
 		const sceneStage = this._cg?.sceneManager?.sceneStage ?? null;
-		if (sceneStage) {
-			this._posePosition
-				.set(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0)
-				.applyMatrix4(sceneStage.matrixWorld);
-			const q = message.quaternion ?? {};
-			this._poseQuaternion.set(Number(q.x) || 0, Number(q.y) || 0, Number(q.z) || 0, Number(q.w) || 1);
-			// worldQuat = stageWorldQuat * relQuat
-			this._poseQuaternion.premultiply(sceneStage.getWorldQuaternion(this._poseStageQuaternion));
-		} else {
-			this._posePosition.set(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0);
-		}
+		mapStreamPoseToWorld(sceneStage, message.position, message.quaternion, this._posePosition, this._poseQuaternion);
 		figure.group.position.set(this._posePosition.x, 0, this._posePosition.z);
 		this._poseForward.copy(CAMERA_FORWARD).applyQuaternion(this._poseQuaternion);
 		this._poseForward.y = 0;

@@ -63,19 +63,33 @@ cg.stream.setEnabled(true);
 cg.stream.enabled;                            // last state from the server
 cg.stream.onEnabledChange((enabled) => {});
 cg.stream.onPose(({ deviceId, position, quaternion, at }) => {});
+
+// cg:watch — per-device watcher registration (desktop mirror windows).
+// The server ref-counts watchers per device and broadcasts
+// { deviceId, watchers } on every change; late joiners get the current
+// state on connect. A WATCHED headset sends poses even while the shared
+// toggle is off; poses are still fanned out to all clients, so
+// StreamFigures (figures only while the toggle is on) is unaffected.
+// Screen-role clients receive watch state but cannot (un)watch.
+cg.stream.setWatching(deviceId, true);        // …false to unwatch
+cg.stream.onWatch(({ deviceId, watchers }) => {});
+cg.stream.isWatched(deviceId);                // sender-side send condition
 ```
 
 Wire formats (server-relayed, no app server code needed): `cg:sync` carries
 `{ type, payload, deviceId, at }`; `cg:status` carries partial state objects
 upstream and `{ deviceId, state, at }` downstream; `cg:stream` carries
-`{ enabled }` both ways; `cg:pose` carries a sceneStage-relative
-`{ position: {x,y,z}, quaternion: {x,y,z,w} }` upstream (deviceId/at stamped
-by the server — the payload's deviceId is never trusted) and downstream.
-`cg:pose` is forwarded only while streaming is on and is **never logged** —
-at ~10 Hz per headset it would flood the log sink / dashboard TUI. Emits
+`{ enabled }` both ways; `cg:watch` carries `{ deviceId, watching }`
+upstream and `{ deviceId, watchers }` downstream; `cg:pose` carries a
+sceneStage-relative `{ position: {x,y,z}, quaternion: {x,y,z,w} }` upstream
+(deviceId/at stamped by the server — the payload's deviceId is never
+trusted) and downstream. `cg:pose` is forwarded only while streaming is on
+OR the sending device is watched, and is **never logged** — at ~10 Hz per
+headset it would flood the log sink / dashboard TUI. Emits
 made before the socket connects are queued and flushed on connect (poses
 are ephemeral and simply dropped instead). Server-side the toggle is
-readable via `relay.stream.enabled()`; the built-in channel can be disabled
+readable via `relay.stream.enabled()` and watcher counts via
+`relay.watch.count(deviceId)`; the built-in channel can be disabled
 with `attachSocketRelay(..., { stream: false })`.
 
 Poses are expressed **relative to the sender's `sceneStage`** — the object
@@ -119,8 +133,10 @@ subpath-served pages keep working. Disable it with
   ticking session time (starts on immersion enter, like the CLI dashboard),
   the dashboard `columns` strings rendered as lines
   (falling back to raw `status key: value` when no columns are configured),
-  the anchor state of the currently selected space, and a Clear button
-  (`DELETE api/anchors?device=N`). Data comes from `GET api/headsets`
+  the anchor state of the currently selected space, a Clear button
+  (`DELETE api/anchors?device=N`), and a **View** button (disabled while
+  the headset is offline) toggling a "view from headset" mirror window —
+  see below. Data comes from `GET api/headsets`
   (polled ~2s, plus refreshes on `cg.status` updates); presence, immersion
   and the merged status come from the socket relay (`relay.presence` /
   `relay.immersion` / `relay.coreStatus`).
@@ -167,6 +183,29 @@ black plane at 20% opacity (`'DesktopFloorPlane'`), child of the sceneStage
 so the desktop anchor restore positions it with the content, raised 5 mm
 with polygonOffset to avoid z-fighting the room mesh floor. Never added in
 XR sessions.
+
+### Headset mirror windows ("View from headset")
+
+The View button on a Headsets card opens a floating window on the desktop
+page that renders the SAME three.js scene from that headset's point of
+view — strictly via the streamed pose, no video feed. Opening a window
+registers a `cg:watch` on the headset, so it sends poses even while the
+shared Stream toggle is off; closing unwatches (the server ref-counts
+watchers, so several desktop pages can watch the same headset). One window
+per headset; draggable by the title bar (kept inside the viewport), title
+bar shows the headset name and its configured color dot.
+
+The window's camera is a mono `PerspectiveCamera` (fov ~95, near 0.05)
+driven by the sceneStage-relative pose mapped to world space and applied
+directly (full orientation, not the yaw-only figure placement), smoothed
+per frame (position lerp / quaternion slerp at ~12/s so 10 Hz updates look
+continuous; the first pose snaps). Rendering reuses the main
+WebGLRenderer: per frame, each open window with a fresh pose is rendered
+into the canvas rectangle behind its div via
+setViewport/setScissor(+setScissorTest), and the full-canvas
+viewport/scissor state is restored afterwards so the main orbit view is
+unaffected. When no pose arrives for ~1.5 s the window shows a dim "not
+immersed" placeholder instead of a frozen frame.
 
 ### Session log viewer
 

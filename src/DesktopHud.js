@@ -45,9 +45,11 @@ function truncateText(value, maxLength = 80) {
  *              session time (ticking; starts on immersion enter, matching
  *              the CLI dashboard), the dashboard column strings (or raw
  *              status key: value when the project configures no columns),
- *              the anchor state of the currently selected space, and a Clear
- *              button (DELETE api/anchors?device=N). Refreshed by polling
- *              api/headsets (~2s) and by cg.status updates.
+ *              the anchor state of the currently selected space, a Clear
+ *              button (DELETE api/anchors?device=N), and a View button
+ *              (disabled while the headset is offline) toggling a "view
+ *              from headset" mirror window (StreamMirrors). Refreshed by
+ *              polling api/headsets (~2s) and by cg.status updates.
  *   Spaces   — current space (GET api/spaces), Select buttons per space
  *              (POST api/spaces/select), and an add-new-space row
  *              (POST api/spaces). Selecting a space switches anchors/mesh
@@ -310,12 +312,28 @@ export class DesktopHud {
 		const anchor = typeof headset.anchor === 'string' ? headset.anchor : 'unknown';
 		anchorText.textContent = anchor;
 		anchorText.style.cssText = `color:${anchor === 'anchored' ? '#6be6a3' : anchor === 'unknown' ? '#ffd374' : '#9fb0d2'};`;
+		anchorRow.appendChild(anchorText);
+
+		const mirrors = this._cg.streamMirrors;
+		if (mirrors && typeof mirrors.toggle === 'function') {
+			const viewButton = doc.createElement('button');
+			viewButton.type = 'button';
+			viewButton.textContent = 'View';
+			const offline = headset.connected !== true;
+			viewButton.disabled = offline;
+			const isOpen = typeof mirrors.isOpen === 'function' && mirrors.isOpen(headset.id);
+			viewButton.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.35);border-radius:6px;font:inherit;padding:1px 6px;cursor:pointer;margin-left:auto;'
+				+ `color:${isOpen ? '#70d7ff' : '#fff'};`
+				+ (offline ? 'opacity:0.4;cursor:default;' : '');
+			viewButton.addEventListener('click', () => mirrors.toggle(headset.id));
+			anchorRow.appendChild(viewButton);
+		}
+
 		const clearButton = doc.createElement('button');
 		clearButton.type = 'button';
 		clearButton.textContent = 'Clear';
 		clearButton.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.35);border-radius:6px;color:#ff8c8c;font:inherit;padding:1px 6px;cursor:pointer;';
 		clearButton.addEventListener('click', () => this.clearHeadsetAnchors(headset));
-		anchorRow.appendChild(anchorText);
 		anchorRow.appendChild(clearButton);
 		card.appendChild(anchorRow);
 

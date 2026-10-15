@@ -126,6 +126,19 @@ export function attachSocketRelay(servers, options = {}) {
 	const coreStatusStates = new Map();
 	// cg.stream: one shared pose-streaming toggle per relay.
 	let streamEnabled = false;
+	// cg:watch: per-device watcher registration (ref-counted across sockets,
+	// so several desktop pages can watch the same headset). A device that is
+	// watched streams poses even while the shared stream toggle is off.
+	const watcherSocketIdsByDeviceId = new Map(); // deviceId → Set<socketId>
+	const watchedDeviceIdsBySocketId = new Map(); // socketId → Set<deviceId>
+
+	function watchCount(deviceId) {
+		return watcherSocketIdsByDeviceId.get(Number(deviceId))?.size ?? 0;
+	}
+
+	function broadcastWatchCount(deviceId) {
+		broadcast('cg:watch', { deviceId, watchers: watchCount(deviceId) });
+	}
 
 	// Structured log lines ([socket:...], [socket] ..., [status] ...) go to the
 	// onLog sink when provided (e.g. an in-process dashboard), else stdout.
@@ -232,6 +245,10 @@ export function attachSocketRelay(servers, options = {}) {
 
 	function attachCoreStreamChannel(socket) {
 		socket.emit('cg:stream', { enabled: streamEnabled });
+		// Late joiners also receive the current watch state (nonzero counts).
+		for (const deviceId of watcherSocketIdsByDeviceId.keys()) {
+			socket.emit('cg:watch', { deviceId, watchers: watchCount(deviceId) });
+		}
 
 		socket.on('cg:stream', (payload) => {
 			if (isScreenSocket(socket)) return;
@@ -243,16 +260,61 @@ export function attachSocketRelay(servers, options = {}) {
 			broadcast('cg:stream', { enabled: streamEnabled });
 		});
 
+		// cg:watch { deviceId, watching } — register/unregister THIS socket as
+		// a watcher of a device. Count changes are broadcast to all clients as
+		// { deviceId, watchers }; the 0↔nonzero transitions are logged once
+		// each (counts within a nonzero range are not).
+		socket.on('cg:watch', (payload) => {
+			if (isScreenSocket(socket)) return;
+			const deviceId = Number(payload?.deviceId);
+			if (!Number.isInteger(deviceId)) return;
+			const watching = Boolean(payload?.watching);
+			let devices = watchedDeviceIdsBySocketId.get(socket.id);
+			if (watching) {
+				if (devices?.has(deviceId)) return; // already watching: no change
+				if (!devices) {
+					devices = new Set();
+					watchedDeviceIdsBySocketId.set(socket.id, devices);
+				}
+				devices.add(deviceId);
+				let watchers = watcherSocketIdsByDeviceId.get(deviceId);
+				if (!watchers) {
+					watchers = new Set();
+					watcherSocketIdsByDeviceId.set(deviceId, watchers);
+				}
+				watchers.add(socket.id);
+				if (watchers.size === 1) {
+					logLine(`[socket] watch ${deviceId} (on)`);
+				}
+			} else {
+				if (!devices?.has(deviceId)) return; // not watching: no change
+				devices.delete(deviceId);
+				const watchers = watcherSocketIdsByDeviceId.get(deviceId);
+				if (watchers) {
+					watchers.delete(socket.id);
+					if (watchers.size === 0) {
+						watcherSocketIdsByDeviceId.delete(deviceId);
+						logLine(`[socket] watch ${deviceId} (off)`);
+					}
+				}
+			}
+			broadcastWatchCount(deviceId);
+		});
+
 		socket.on('cg:pose', (payload) => {
 			if (isScreenSocket(socket)) return;
-			if (!streamEnabled) return;
+			const poseDeviceId = parseDeviceIdQuery(socket?.handshake?.query ?? {});
+			// Poses flow while the shared toggle is on OR while this device is
+			// watched (desktop mirror windows). StreamFigures still only shows
+			// figures while the shared toggle is on.
+			if (!streamEnabled && watchCount(poseDeviceId) === 0) return;
 			const position = sanitizePoseVector(payload?.position, ['x', 'y', 'z']);
 			const quaternion = sanitizePoseVector(payload?.quaternion, ['x', 'y', 'z', 'w']);
 			if (!position || !quaternion) return;
 			const message = {
 				position,
 				quaternion,
-				deviceId: parseDeviceIdQuery(socket?.handshake?.query ?? {}),
+				deviceId: poseDeviceId,
 				at: Date.now(),
 			};
 			broadcastExcept(socket, 'cg:pose', message);
@@ -376,6 +438,22 @@ export function attachSocketRelay(servers, options = {}) {
 				clientLabelBySocketId.delete(socket.id);
 				clientLogStateBySocketId.delete(socket.id);
 				deviceIdBySocketId.delete(socket.id);
+				// A disconnecting socket drops all its watch registrations.
+				const watchedDevices = watchedDeviceIdsBySocketId.get(socket.id);
+				if (watchedDevices) {
+					watchedDeviceIdsBySocketId.delete(socket.id);
+					for (const watchedDeviceId of watchedDevices) {
+						const watchers = watcherSocketIdsByDeviceId.get(watchedDeviceId);
+						if (watchers) {
+							watchers.delete(socket.id);
+							if (watchers.size === 0) {
+								watcherSocketIdsByDeviceId.delete(watchedDeviceId);
+								logLine(`[socket] watch ${watchedDeviceId} (off)`);
+							}
+						}
+						broadcastWatchCount(watchedDeviceId);
+					}
+				}
 				if (disconnectedDeviceId != null) {
 					for (const channel of statusChannels) {
 						channel.entries.delete(disconnectedDeviceId);
@@ -430,6 +508,11 @@ export function attachSocketRelay(servers, options = {}) {
 		// The shared pose-streaming toggle (cg.stream).
 		stream: {
 			enabled: () => streamEnabled,
+		},
+		// Per-device watcher counts (cg:watch; watched devices stream poses
+		// even while the shared stream toggle is off).
+		watch: {
+			count: (deviceId) => watchCount(deviceId),
 		},
 		coreStatus: {
 			entries: coreStatusStates,

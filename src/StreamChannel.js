@@ -20,6 +20,14 @@
  * relative pose back through their own sceneStage's world transform before
  * placing anything, so a figure lands where the user stands relative to
  * the content regardless of each side's anchor offset.
+ *
+ * Watch (desktop mirror windows): `setWatching(deviceId, true)` registers
+ * this client as a watcher of one headset; the server ref-counts watchers
+ * per device and broadcasts `{ deviceId, watchers }` on every change
+ * (late joiners get the current state on connect). A watched headset sends
+ * poses even while the shared stream toggle is off — poses are still fanned
+ * out to all clients, so StreamFigures' own gating is unaffected. Track
+ * counts with onWatch(fn) / watchersFor(deviceId) / isWatched(deviceId).
  */
 export class StreamChannel {
 	constructor(socketProvider) {
@@ -29,6 +37,8 @@ export class StreamChannel {
 		this._enabled = false;
 		this._enabledListeners = new Set();
 		this._poseListeners = new Set();
+		this._watchListeners = new Set();
+		this._watchersByDeviceId = new Map();
 	}
 
 	get enabled() {
@@ -56,6 +66,31 @@ export class StreamChannel {
 		return () => this._poseListeners.delete(listener);
 	}
 
+	/** Register/unregister this client as a watcher of one headset device. */
+	setWatching(deviceId, watching) {
+		this._attach();
+		if (this._socket?.connected) {
+			this._socket.emit('cg:watch', { deviceId: Number(deviceId), watching: Boolean(watching) });
+		}
+	}
+
+	/** Subscribe to { deviceId, watchers } watch-state broadcasts. */
+	onWatch(listener) {
+		if (typeof listener !== 'function') return () => {};
+		this._watchListeners.add(listener);
+		this._attach();
+		return () => this._watchListeners.delete(listener);
+	}
+
+	watchersFor(deviceId) {
+		return this._watchersByDeviceId.get(Number(deviceId)) ?? 0;
+	}
+
+	/** True while any client watches this device (it then streams poses). */
+	isWatched(deviceId) {
+		return this.watchersFor(deviceId) > 0;
+	}
+
 	/**
 	 * Lazily open the socket and subscribe to the server-pushed state. Called
 	 * by CommonGround at init so `enabled` tracks the server even before any
@@ -69,6 +104,7 @@ export class StreamChannel {
 				this._socket = socket;
 				socket.on('cg:stream', (payload) => this._applyEnabled(payload?.enabled));
 				socket.on('cg:pose', (message) => this._dispatchPose(message));
+				socket.on('cg:watch', (payload) => this._applyWatch(payload));
 			});
 		return this._attachPromise;
 	}
@@ -83,6 +119,17 @@ export class StreamChannel {
 		this._enabled = next;
 		for (const listener of this._enabledListeners) {
 			listener(next);
+		}
+	}
+
+	_applyWatch(payload) {
+		const deviceId = Number(payload?.deviceId);
+		const watchers = Number(payload?.watchers);
+		if (!Number.isInteger(deviceId) || !Number.isFinite(watchers) || watchers < 0) return;
+		if (this._watchersByDeviceId.get(deviceId) === watchers) return;
+		this._watchersByDeviceId.set(deviceId, watchers);
+		for (const listener of this._watchListeners) {
+			listener({ deviceId, watchers });
 		}
 	}
 
