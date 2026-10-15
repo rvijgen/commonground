@@ -1,6 +1,6 @@
 # Commonground
 
-Commonground is a multi-user WebXR framework for persistent, room-aware scene placement, built on Three.js + RATK. Multiple headsets (Meta Quest) join the same physical room: each headset stores and retrieves anchor points through a shared server, so every headset — and a desktop spectator view — sees the same virtual objects at the same physical positions.
+Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for persistent, room-aware scene placement, built on Three.js + RATK. Multiple Meta Quest headsets join the same physical room: each headset stores and retrieves anchor points through a shared server, so every headset — and a desktop spectator view — sees the same virtual objects at the same physical positions, blended into the real room.
 
 ## What it does
 
@@ -9,7 +9,8 @@ Commonground is a multi-user WebXR framework for persistent, room-aware scene pl
 - **Cross-headset channels** — `cg.sync` (generic events relayed to every other headset), `cg.status` (per-device status merge store feeding dashboards and logs), and `cg.stream` (live headset poses at ~10 Hz).
 - **Desktop spectator view** — any browser shows the room mesh and placed content, with a HUD offering Headsets (presence, session time, status, anchor state), Spaces (select/create) and Session (sync/stream toggles, session log) tabs. While streaming, each immersed headset appears as a tinted human figure at its real position.
 - **Terminal dashboard** — an alt-screen TUI with per-headset status columns, session timing and NDJSON session logging, plus a generated helper page that gives every headset (and the desktop view) a launch link.
-- **In-headset tooling** — a VR control panel for grabbing and placing the scene, an FPS counter, and depth-based occlusion of virtual content behind real geometry.
+- **Configurable occlusion** — virtual content is realistically hidden behind real walls and furniture using the headset's depth sensing, with prepass/shader modes, per-object clear boxes, an adjustable bias and a debug depth overlay.
+- **In-headset tooling** — a VR control panel for grabbing and placing the scene, and an FPS counter.
 - **No build step required** — the client library is plain ES modules, served to your app with an import map; bundling is optional.
 
 ![Screenshot](assets/commonground.png)
