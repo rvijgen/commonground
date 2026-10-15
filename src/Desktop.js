@@ -48,15 +48,24 @@ export default class Desktop {
   }
 
   /**
-   * Frame the whole scene: aim the orbit target at the scene's bounding
-   * box center and place the camera (along the current view direction)
-   * at the exact distance where every box corner lands inside both FOV
-   * frustums, plus a small margin. Raises maxDistance when the fit needs
-   * more than the default zoom range.
+   * Frame an object subtree: aim the orbit target at its bounding box
+   * center and place the camera (along the current view direction) at the
+   * exact distance where every box corner lands inside both FOV frustums,
+   * plus a small margin. Raises maxDistance when the fit needs more than
+   * the default zoom range.
    */
-  frameScene(scene, { padding = 1.1 } = {}) {
-    if (!this.controls || !scene) return;
-    const box = new Box3().setFromObject(scene);
+  frameScene(root, { padding = 1.1 } = {}) {
+    if (!this.controls || !root) return;
+    // Union the world boxes of visible geometry only — hidden helpers
+    // (ceiling grid, axes, wireframe plane) must not inflate the frame.
+    const box = new Box3();
+    root.updateMatrixWorld(true);
+    const expand = (obj, ancestorVisible) => {
+      const visible = ancestorVisible && obj.visible;
+      if (visible && obj.geometry) box.expandByObject(obj);
+      for (const child of obj.children) expand(child, visible);
+    };
+    expand(root, true);
     if (box.isEmpty()) return;
     const center = box.getCenter(new Vector3());
     const size = box.getSize(new Vector3());
