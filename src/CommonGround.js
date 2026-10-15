@@ -338,7 +338,9 @@ export class CommonGround {
         this._setupDriftCheck();
         setInterval(this._checkDrift.bind(this), 500);
 
-        // In desktop mode with no mesh data, resolve after a timeout fallback
+        // In desktop mode with no mesh data, mark ceiling detected after a
+        // timeout fallback so late awaiters and getCeilingHeight() settle on
+        // the default height.
         if (this.isDesktopMode) {
             setTimeout(() => {
                 if (!this._ceilingDetected) {
@@ -346,10 +348,14 @@ export class CommonGround {
                     this._ceilingReady();
                 }
             }, 3000);
+        } else {
+            // Headsets block on ceiling detection: scene placement helpers
+            // (CeilingGrid) must be final before the app adds content. On
+            // desktop the ceiling is informational only — it arrives whenever
+            // the room mesh finishes loading, and apps that care can use
+            // onCeilingHeightChanged — so don't delay init() for it.
+            await this._ceilingReadyPromise;
         }
-
-        // Wait until ceiling height is known
-        await this._ceilingReadyPromise;
 
         return this;
     }
