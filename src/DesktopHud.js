@@ -127,17 +127,18 @@ export class DesktopHud {
 			`font:${HUD_FONT}`,
 			'user-select:text',
 		].join(';');
-		hint.textContent = `Open ${helperUrl} in the headset browser `;
+		hint.textContent = 'Open ';
 		const link = this._doc.createElement('a');
 		link.href = helperUrl;
-		link.textContent = '(quicklaunch)';
+		link.textContent = helperUrl;
 		link.title = 'Open the quicklaunch menu in a new window';
-		link.style.cssText = 'color:#7dd3fc;cursor:pointer;user-select:none';
+		link.style.cssText = 'color:#7dd3fc;cursor:pointer';
 		link.addEventListener('click', (event) => {
 			event.preventDefault();
 			window.open(helperUrl, 'commonground-quicklaunch', 'width=420,height=640');
 		});
 		hint.appendChild(link);
+		hint.appendChild(this._doc.createTextNode(' in the headset browser'));
 		this._doc.body.appendChild(hint);
 		this._helperHint = hint;
 	}
