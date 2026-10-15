@@ -16,7 +16,7 @@ export default {
 	certDir: '.certs',
 
 	dashboard: {
-		title: 'My CommonGround Project',
+		title: 'Test Cube',
 		// One entry per headset. `color` (hex) is used across the TUI, the
 		// desktop HUD, the helper page and the streamed desktop figures.
 		headsets: [

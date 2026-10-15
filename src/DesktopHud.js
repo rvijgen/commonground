@@ -38,8 +38,9 @@ function truncateText(value, maxLength = 80) {
 /**
  * DesktopHud — framework-owned DOM overlay shown in desktop mode only.
  * Top-right tab bar (Headsets | Spaces | Session) plus a persistent Helpers
- * toggle; the containers ignore pointer events so OrbitControls keeps
- * working, only the widgets themselves are interactive.
+ * toggle; a top-left hint shows the headset launch page address (from
+ * api/client-config). The containers ignore pointer events so OrbitControls
+ * keeps working, only the widgets themselves are interactive.
  *
  *   Headsets — one card per headset from GET api/headsets: presence +
  *              session time (ticking; starts on immersion enter, matching
@@ -82,14 +83,53 @@ export class DesktopHud {
 		this._headsetsFetchedAt = 0;
 		this._headsetCards = new Map();
 		this._overlay = null;
+		this._helperHint = null;
 		this._onKeyDown = (event) => {
 			if (event.key === 'Escape') this._closeLogsOverlay();
 		};
 
 		if (!this._doc) return;
 		this._build();
+		this._buildHelperHint();
 		this._subscribeStatus();
 		this._startPolling();
+	}
+
+	// ── Helper-page hint (top-left) ───────────────────────────────────────
+
+	// "Open http://<lan-ip>/ in the headset browser" — the launch page address
+	// from GET api/client-config (null there → no hint, e.g. no helper page).
+	// Text stays selectable so the URL can be copied.
+	async _buildHelperHint() {
+		if (!this._fetch || this._helperHint) return;
+		let helperUrl = null;
+		try {
+			const response = await this._fetch('api/client-config', { cache: 'no-store' });
+			if (response && response.ok) {
+				const config = await response.json();
+				helperUrl = typeof config?.helperUrl === 'string' ? config.helperUrl : null;
+			}
+		} catch (_error) {
+			return;
+		}
+		if (!helperUrl) return;
+		const hint = this._doc.createElement('div');
+		hint.id = 'commonground-desktop-hud-helper-hint';
+		hint.style.cssText = [
+			'position:fixed',
+			'top:10px',
+			'left:10px',
+			'z-index:1000',
+			'padding:6px 10px',
+			'border-radius:8px',
+			'background:rgba(15,23,42,0.75)',
+			'color:#fff',
+			`font:${HUD_FONT}`,
+			'user-select:text',
+		].join(';');
+		hint.textContent = `Open ${helperUrl} in the headset browser`;
+		this._doc.body.appendChild(hint);
+		this._helperHint = hint;
 	}
 
 	// ── Top bar + tabs ──────────────────────────────────────────────────
@@ -677,6 +717,10 @@ export class DesktopHud {
 			this._unsubscribeStream = null;
 		}
 		this._hidePanel();
+		if (this._helperHint && this._helperHint.parentNode) {
+			this._helperHint.parentNode.removeChild(this._helperHint);
+		}
+		this._helperHint = null;
 		if (this._container && this._container.parentNode) {
 			this._container.parentNode.removeChild(this._container);
 		}

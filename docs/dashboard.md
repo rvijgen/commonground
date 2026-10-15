@@ -27,15 +27,20 @@ runDashboard({
 	sessionLogFile: './data/logs/headset-sessions.ndjson',
 	helperPage: {
 		port: 80, fallbackPort: 3000,
-		title: 'Quest Links', heading: 'Headset Launch', description: '...',
+		title: 'Quest Links', heading: 'My Project Launch', description: '...',
 		links: [{ label: 'Screen', href: 'https://{host}:3004/screen' }],
 		headsetLinks: [
-			{ label: 'Headset {id}', href: 'https://{host}:3004?deviceid={id}' },
-			{ label: 'Headset {id} Sync', href: 'https://{host}:3004?deviceid={id}&sync=1' },
+			{ label: '{label}', href: 'https://{host}:3004?deviceid={id}' },
+			{ label: 'Setup {label}', href: 'https://{host}:3004?deviceid={id}&admin=1' },
 		],
 	},
 });
 ```
+
+`heading` defaults to `"<dashboard title> Launch"`; headset link labels
+support `{id}` and `{label}` placeholders. Headset buttons are color-coded
+with each headset's configured hex `color` (solid for the first link,
+outline for the rest); one row per configured headset.
 
 Child processes must print the scraped line formats to stdout:
 `[socket:<label>] connected|disconnected client <id>` and

@@ -154,7 +154,9 @@ placement tool; its callbacks still drive `helpers`/`menu` config). Instead,
 desktop mode gets a framework-owned DOM overlay top-right — a tab bar
 (**Headsets | Spaces | Session**) with a persistent **Helpers** toggle
 (`setHelpersVisible()`, the same helper set the VR control panel toggles in
-XR) — that stays out of OrbitControls' way and uses relative URLs so
+XR) — plus a top-left hint showing the headset launch page address
+(`helperUrl` from `api/client-config`; hidden when the project runs no
+helper page) — that stays out of OrbitControls' way and uses relative URLs so
 subpath-served pages keep working. Disable it with
 `configure({ desktopHud: false })`. VR behavior is unchanged.
 

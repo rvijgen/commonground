@@ -214,14 +214,31 @@ function createHelperPage({ pageConfig, host, headsets }) {
 
 	const headsetRows = headsets
 		.map((headset) => {
+			const headsetLabel = String(headset.label ?? `Headset ${headset.id}`);
+			const fillPlaceholders = (text) => String(text)
+				.replaceAll('{id}', String(headset.id))
+				.replaceAll('{label}', headsetLabel);
 			const links = typeof pageConfig.headsetLinks === 'function'
 				? pageConfig.headsetLinks(headset, safeHost)
 				: (pageConfig.headsetLinks || []).map((link) => ({
-					label: String(link.label).replaceAll('{id}', String(headset.id)),
-					href: fillHost(String(link.href).replaceAll('{id}', String(headset.id))),
+					label: fillPlaceholders(link.label),
+					href: fillHost(fillPlaceholders(link.href)),
 				}));
+			// Color-code the buttons with the headset's configured hex color:
+			// solid for launch, outline for Setup. Hex-only — anything else
+			// falls back to the default dark button.
+			const color = typeof headset.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(headset.color.trim())
+				? headset.color.trim()
+				: null;
 			const cells = links
-				.map((link) => `<td><a href="${link.href}" target="_blank" rel="noopener noreferrer">${link.label}</a></td>`)
+				.map((link, index) => {
+					const style = color
+						? (index === 0
+							? ` style="background:${color};border:2px solid ${color};"`
+							: ` style="background:#ffffff;color:${color};border:2px solid ${color};"`)
+						: '';
+					return `<td><a href="${link.href}" target="_blank" rel="noopener noreferrer"${style}>${link.label}</a></td>`;
+				})
 				.join('\n');
 			return `<tr>${cells}</tr>`;
 		})
@@ -852,7 +869,6 @@ export function runDashboard(config = {}) {
 		return [
 			{ label: 'CommonGround', href: `${base}/api/anchors` },
 			...routeLinks,
-			{ label: 'Session Logs', href: `${base}/commonground/logs` },
 			{ label: 'Desktop', href: `${base}/` },
 		];
 	}
@@ -861,8 +877,8 @@ export function runDashboard(config = {}) {
 		const base = helperBaseUrl();
 		if (!base) return [];
 		return [
-			{ label: 'Headset {id}', href: `${base}?deviceid={id}` },
-			{ label: 'Headset {id} Admin', href: `${base}?deviceid={id}&admin=1` },
+			{ label: '{label}', href: `${base}?deviceid={id}` },
+			{ label: 'Setup {label}', href: `${base}?deviceid={id}&admin=1` },
 		];
 	}
 
@@ -871,6 +887,10 @@ export function runDashboard(config = {}) {
 		const base = pageConfig === true ? {} : pageConfig;
 		return {
 			...base,
+			// Default heading: "<dashboard title> Launch" so the page introduces
+			// itself as the project, not the framework. Skip the generic
+			// 'Dashboard' default — then the template's own fallback applies.
+			heading: base.heading ?? (typeof title === 'string' && title && title !== 'Dashboard' ? `${title} Launch` : base.heading),
 			links: Array.isArray(base.links) ? base.links : defaultHelperLinks(),
 			headsetLinks: base.headsetLinks !== undefined ? base.headsetLinks : defaultHelperHeadsetLinks(),
 		};

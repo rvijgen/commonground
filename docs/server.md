@@ -24,8 +24,9 @@ All endpoints are mounted at `/`, `/commonground/`, and any caller-provided alia
 - `GET/POST/DELETE /api/anchors` (legacy alias `/anchors`) — persistent anchor references; `?device=N` scopes keys as `device_<id>_<key>`
 - `GET/POST /api/mesh` (legacy alias `/mesh`) — room mesh export
 - `POST /api/roommesh`, `GET /api/roommesh[/:sessionId]` — legacy per-session room meshes
-- `GET /api/client-config` — client runtime config (`{ syncDefault, headsets: [{ id, label, color? }] }`;
-  `color` passes through only when DOM-safe — ANSI SGR escape strings are stripped)
+- `GET /api/client-config` — client runtime config (`{ syncDefault, helperUrl, headsets: [{ id, label, color? }] }`);
+  `helperUrl` is the launch page address for the desktop HUD hint (null when the project runs no helper page);
+  `color` passes through only when DOM-safe — ANSI SGR escape strings are stripped
 - `GET /api/headsets` — live per-headset overview for the desktop HUD:
   `[{ id, label, connected, connectedDurationMs (null when disconnected),
   immersedAt, immersedDurationMs (null until immersion enter), status
@@ -227,9 +228,9 @@ export default {
 		helperPage: {},                 // fully generated page; or override:
 		// helperPage: {
 		// 	port: 80, fallbackPort: 3000,
-		// 	title: 'Quest Links', heading: 'Headset Launch', description: '...',
+		// 	title: 'Quest Links', heading: 'My Project Launch', description: '...',
 		// 	links: [{ label: 'Screen', href: 'https://{host}:3002/screen' }],
-		// 	headsetLinks: [{ label: 'Headset {id}', href: 'https://{host}:3002?deviceid={id}' }],
+		// 	headsetLinks: [{ label: 'Setup {label}', href: 'https://{host}:3002?deviceid={id}&admin=1' }],
 		// },
 	},
 };
@@ -278,9 +279,12 @@ them.
 With `helperPage: {}` (or `true`) the launch page is fully generated:
 `CommonGround` → `/api/anchors` (certificate accept), one quick link per
 top-level route that has a `label` (routes without `label` are skipped),
-`Session Logs` → `/commonground/logs`, `Desktop` → `/`, and per-headset
-`Headset {id}` / `Headset {id} Admin` links (`?deviceid={id}[&admin=1]`) —
-all against `https://{host}:<appHttpsPort>`. `port`/`fallbackPort` and the
+`Desktop` → `/`, and one row per configured headset holding a `{label}`
+launch link and a `Setup {label}` admin link
+(`?deviceid={id}[&admin=1]`) — all against `https://{host}:<appHttpsPort>`.
+Buttons are color-coded with each headset's configured hex `color` (solid
+for launch, outline for Setup), and the heading defaults to
+`"<dashboard title> Launch"`. `port`/`fallbackPort` and the
 cosmetic `title`/`heading`/`description` keep their meaning; explicit
 `links`/`headsetLinks` replace the generated lists entirely. Without an
 `appHttpsPort` (standalone classic-mode dashboards) the generated lists are

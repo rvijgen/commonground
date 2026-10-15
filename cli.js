@@ -129,6 +129,13 @@ const server = await createServer({
 	getRelayRuntime: () => relay,
 	sessionLogFile,
 	sessionLogTitle: config.sessionLogTitle || 'Session Logs',
+	// Lets GET api/client-config advertise the helper page URL (desktop HUD
+	// hint); null when the project runs no helper page.
+	helperPage: (() => {
+		const hp = config.dashboard && typeof config.dashboard === 'object' ? config.dashboard.helperPage : null;
+		if (!hp) return null;
+		return { port: hp === true ? undefined : hp.port };
+	})(),
 	extraRoutes: (app, context) => {
 		for (const route of routes) {
 			if (!route || !route.path || !route.file) continue;

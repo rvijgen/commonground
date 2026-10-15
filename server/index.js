@@ -209,6 +209,7 @@ export async function createServer(options = {}) {
 		serveExample = false,
 		apps = [],
 		onLog = null,
+		helperPage = null,
 	} = options;
 	const resolvedSessionLogFile = sessionLogFile
 		? path.resolve(sessionLogFile)
@@ -347,6 +348,18 @@ export async function createServer(options = {}) {
 	app.get(clientConfigPaths, (req, res) => {
 		res.json({
 			syncDefault: syncDefault !== false,
+			// Where the headset launch (helper) page lives, for the desktop
+			// HUD's "open this on your Quest" hint. Null when the project runs
+			// no helper page. Mirrors the dashboard's preferred port — if that
+			// port was unavailable the dashboard falls back silently, so prefer
+			// the exact URLs printed in the TUI when in doubt.
+			helperUrl: (() => {
+				if (!helperPage) return null;
+				const ip = getLanIpv4Addresses()[0];
+				if (!ip) return null;
+				const port = Number(helperPage.port) || 80;
+				return `http://${ip}${port === 80 ? '' : `:${port}`}/`;
+			})(),
 			headsets: (Array.isArray(headsets) ? headsets : [])
 				.filter((headset) => headset && headset.id != null)
 				.map((headset) => {
