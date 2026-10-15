@@ -586,3 +586,7 @@ cg.getFpsCounterEnabled();             // → effective boolean
 - `buttonText`: gets or sets the AR button label.
 - `depthOcclusion`: public handle to the active occlusion instance when occlusion is enabled.
 - `depthOverlay`: public handle to the active overlay instance when occlusion is enabled.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — free for noncommercial use with attribution. See [LICENSE](LICENSE).

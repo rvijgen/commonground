@@ -1,8 +1,13 @@
 {
 	"name": "commonground",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "WebXR CommonGround library with room-aware scene placement and persistence",
-	"private": true,
+	"license": "SEE LICENSE IN LICENSE",
+	"author": "Richard Vijgen",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/rvijgen/commonground.git"
+	},
 	"type": "module",
 	"main": "index.js",
 	"module": "index.js",

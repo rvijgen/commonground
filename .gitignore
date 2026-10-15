@@ -6,3 +6,5 @@ dist/
 .certs/
 server/.certs/
 server/data/
+data/
+logs/
