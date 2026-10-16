@@ -109,10 +109,16 @@ let relay = null;
 // Default status used when rendering dashboard columns for the headsets API:
 // the project's hook when provided, else derived from its statusFields —
 // mirroring the CLI dashboard, which always renders from a full status.
+// enteredImmersion is framework-stamped (XR session start), so it is part of
+// every project's status shape; projects declare their own fields on top.
 const dashboardSection = config.dashboard && typeof config.dashboard === 'object' ? config.dashboard : {};
+const statusFields = {
+	enteredImmersion: 'boolean',
+	...(dashboardSection.statusFields && typeof dashboardSection.statusFields === 'object' ? dashboardSection.statusFields : {}),
+};
 const headsetDefaultStatus = typeof dashboardSection.createDefaultStatus === 'function'
 	? dashboardSection.createDefaultStatus()
-	: (dashboardSection.statusFields ? createStatusFromFields(dashboardSection.statusFields) : {});
+	: createStatusFromFields(statusFields);
 
 const server = await createServer({
 	spaceId,
@@ -173,6 +179,10 @@ if (config.dashboard && config.dashboard.enabled !== false) {
 		appHttpsPort: httpsPort,
 		appRoutes: routes,
 		...dashboardConfig,
+		// Merged status shape: framework-stamped enteredImmersion plus the
+		// project's own statusFields (explicit createDefaultStatus /
+		// summarizeSession hooks in dashboardConfig still win downstream).
+		statusFields,
 		processes,
 		handleSignals: false,
 	});

@@ -216,10 +216,9 @@ export default {
 		columns: [{ render: (status, headset) => `...` }],
 		statusFields: {                 // declares the status shape once; derives
 			introductionStep: 'number',           // the default status and the
-			enteredImmersion: 'boolean',          // session-log entry (see below)
-			lastTileDraggedTitle: 'string',
-			lastFloorplanHex: 'number?',          // nullable
-			tileGrabHistory: [{ title: 'string' }],  // event array: entry schema
+			lastTileDraggedTitle: 'string',       // session-log entry (see below).
+			lastFloorplanHex: 'number?',          // enteredImmersion: 'boolean' is
+			tileGrabHistory: [{ title: 'string' }],  // always implied (framework-stamped)
 		},
 		createDefaultStatus: null,      // optional override (derived from statusFields)
 		applyStatusState: (status, state, payload) => ({ ...status, ...state }),
@@ -255,6 +254,11 @@ default status and the session-log entry from it. Field types: `'number'`,
 written as a one-element array holding the entry schema
 (`[{ title: 'string', box: 'string' }]`).
 
+`enteredImmersion: 'boolean'` is always part of the shape — the CLI merges
+it under the project's declared fields, because the framework stamps it
+itself on XR session start (it drives session timing and gating of the
+session-log entry). Projects only declare their own fields.
+
 Derived default status: number → `0`, boolean → `false`, string → `'none'`,
 nullable → `null`, event array → `[]`. The derived default also carries
 `lastAction: 'none'` (the conventional client-stamped field of cg.status
@@ -269,9 +273,10 @@ mapped through `toSessionMsEvents` with each entry normalized to exactly the
 declared entry fields (declared order) plus `sessionMs`.
 
 Override hierarchy: an explicit `createDefaultStatus` / `summarizeSession`
-hook always wins over the derived version; without `statusFields` the
-framework falls back to an empty default status and the generic envelope
-with the raw final status. `columns` is unaffected. The derived builders are
+hook always wins over the derived version; the CLI always passes at least
+`{ enteredImmersion: 'boolean' }`, so the empty-status/generic-envelope
+fallback only applies to direct `runDashboard` use without `statusFields`.
+`columns` is unaffected. The derived builders are
 exported as `createStatusFromFields(statusFields)` and
 `summarizeSessionFromFields(statusFields)` for projects that want to wrap
 them.

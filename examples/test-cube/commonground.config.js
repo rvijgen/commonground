@@ -19,10 +19,5 @@ export default {
 			{ id: 3, label: 'Headset 3', color: '#57c785' },
 			{ id: 4, label: 'Headset 4', color: '#e6c93c' },
 		],
-		// Declares the status shape for the dashboard/session logs; derives
-		// the default status and the session-log entry. CommonGround stamps
-		// enteredImmersion itself on XR session start; apps add their own
-		// fields via cg.status.update().
-		statusFields: { enteredImmersion: 'boolean' },
 	},
 };
