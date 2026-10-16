@@ -1,7 +1,7 @@
 # Commonground
 
 Create a shared Mixed Reality Experience using Open Standards. 
-Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for persistent, room-aware scene placement, built on Three.js + RATK. Multiple Mixed Reality headsets (Like Meta Quest) join the same physical room: each headset sees the same virtual object at the same position in physical space. A desktop view shows the scene and the realtime position of users in the space, allows you to see what users see and logs session time and custom events.
+Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for persistent, room-aware scene placement, built on Three.js + RATK. Multiple Mixed Reality headsets (Like Meta Quest) join the same hybrid space: each headset sees the same virtual object at the same position in physical space. User actions (like picking up an object) are synchronised across headsets. A web dashboard shows the scene and the realtime position of users in the space, streams the view from the headsets and logs session time and custom events.
 
 ![Screenshot](assets/commonground.png)
 
@@ -25,28 +25,21 @@ npm install
 npm run demo
 ```
 
-`npm run demo` runs the bundled example project (`examples/test-cube/`) the
-same way your own app would run: the CLI starts from that directory, reads
-its `commonground.config.js`, and stores runtime data (anchors, session
-logs) in `examples/test-cube/data/`. You get the full experience in one
-process: the example app, the anchors/mesh API + socket channels, the
-alt-screen terminal dashboard (per-headset status, session timing), the
-generated helper launch page, and NDJSON session logs. The dashboard tells
-you the helper-page URL
-(port 80, or 3000 when unprivileged) — open it on a desktop or a Headset (like Meta Quest)
-and pick a link, or go straight to `https://<your-machine>:3002/` (accept
-the self-signed dev certificate) for the desktop spectator view with the
-Headsets/Spaces/Session HUD. `npm run server` does the same thing;
-`npm run server:bare` is the minimal variant (API + example only, no
-dashboard). To start your own project, copy `examples/test-cube/` and work
-from there.
+`npm run demo` runs the bundled example project (`examples/test-cube/`). It starts the commonground server and opens the Dashboard in a new browser window.
+
+- Open the ip address that is shown in the dashboard on the headset to view the quicklaunch menu. Click "Setup Headset 1" to align the scene in physical space. Once Aligned, click "Save Anchors" and exit Immersion. Now you can click "Headset 1" from the quicklaunch menu and find the scene where you aligned it. Repeat for headsets 2,3,4 etc.
+
+- In the web dashboard you can see the users move through the space once they entered immersion. Click the 'headsets' tab to view the headsets attached to the project (4 headsets by default). See if they have been anchored in physical space or clear the anchor to reset. Click 'View' to see a stream from the headset in real time. Use the spaces tab to set up alignment for additional spaces. The 'Session' tab allows you to set synchronisation (user actions are synced accross devices) and streaming (User positions and views are streamed to the dashboard). Both are enabled by default. Click 'Session Log' to see a visual log of user session lengths and custom events.
+
+- Use commonground.config.js to set the number of headsets, color coding and custom events.
+
+- Copy the test-cube example to start a new project and run with npm run 'project-name'
 
 ## Documentation
 
 - [docs/server.md](docs/server.md) — running and embedding the server, spaces, the anchors/mesh API, the socket relay and the `commonground serve` CLI config
 - [docs/client.md](docs/client.md) — the `CommonGround` client library: sync/status/stream channels, desktop mode, occlusion and the API reference
 - [docs/dashboard.md](docs/dashboard.md) — the terminal dashboard, session logs and the helper launch page
-- [examples/test-cube/](examples/test-cube/) — the minimal example app
 
 ## License
 
