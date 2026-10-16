@@ -107,6 +107,10 @@ export function attachSocketRelay(servers, options = {}) {
 		streamDefault = true,
 		onLog = null,
 		hasEnteredImmersion = (state) => Boolean(state?.enteredImmersion),
+		// Event taps for stream recording (server/recorder.js): onPose gets
+		// every forwarded cg:pose message, onStatus every cg:status summary.
+		onPose = null,
+		onStatus = null,
 	} = options;
 
 	const ioServers = [];
@@ -193,6 +197,25 @@ export function attachSocketRelay(servers, options = {}) {
 		});
 	}
 
+	// Merge one partial update into a device's cg:status state, stamp
+	// immersion, log the [status] line (dashboard contract) and broadcast.
+	// Shared by the socket handler and the replay simulation API.
+	function applyDeviceStatus(deviceId, partial) {
+		const current = coreStatusStates.get(deviceId) ?? {};
+		const next = { ...current, ...partial };
+		const at = Date.now();
+		coreStatusStates.set(deviceId, next);
+		if (!immersedAtByDeviceId.has(deviceId) && hasEnteredImmersion(next)) {
+			immersedAtByDeviceId.set(deviceId, at);
+		}
+		const summary = { deviceId, state: next, at };
+		logLine(`[status] ${JSON.stringify(summary)}`);
+		broadcast('cg:status', summary);
+		if (typeof onStatus === 'function') {
+			try { onStatus(summary); } catch (_) { /* recorder must not break the relay */ }
+		}
+	}
+
 	// cg.status: dumb per-device merge store. Each partial update is
 	// shallow-merged into the device's last-known state, logged as a
 	// [status] line (dashboard contract) and broadcast to all clients
@@ -202,22 +225,14 @@ export function attachSocketRelay(servers, options = {}) {
 			if (isScreenSocket(socket)) return;
 			if (!partial || typeof partial !== 'object' || Array.isArray(partial)) return;
 			const deviceId = parseDeviceIdQuery(socket?.handshake?.query ?? {});
-			const current = deviceId != null ? (coreStatusStates.get(deviceId) ?? {}) : {};
-			const next = { ...current, ...partial };
-			const at = Date.now();
-			if (deviceId != null) {
-				coreStatusStates.set(deviceId, next);
-				if (!immersedAtByDeviceId.has(deviceId) && hasEnteredImmersion(next)) {
-					immersedAtByDeviceId.set(deviceId, at);
-				}
-			}
-			const summary = { deviceId, state: next, at };
 			// Device-less clients (desktop pages) carry no deviceId: nothing
-			// to attribute the state to, so don't feed the dashboard log.
-			if (deviceId != null) {
-				logLine(`[status] ${JSON.stringify(summary)}`);
+			// to attribute the state to, so don't store/log — but their
+			// updates are still broadcast like before.
+			if (deviceId == null) {
+				broadcast('cg:status', { deviceId, state: { ...partial }, at: Date.now() });
+				return;
 			}
-			broadcast('cg:status', summary);
+			applyDeviceStatus(deviceId, partial);
 		});
 	}
 
@@ -320,6 +335,9 @@ export function attachSocketRelay(servers, options = {}) {
 				at: Date.now(),
 			};
 			broadcastExcept(socket, 'cg:pose', message);
+			if (typeof onPose === 'function') {
+				try { onPose(message); } catch (_) { /* recorder must not break the relay */ }
+			}
 		});
 	}
 
@@ -519,6 +537,42 @@ export function attachSocketRelay(servers, options = {}) {
 		coreStatus: {
 			entries: coreStatusStates,
 			get: (deviceId) => coreStatusStates.get(deviceId) ?? null,
+		},
+		// Replay simulation (server/replay.js): drive presence, status and
+		// poses for a device without a real socket. Emits the same
+		// [socket:replay]/[status] log lines and broadcasts as real clients,
+		// so the dashboard, api/headsets and desktop figures behave the same.
+		simulation: {
+			connect(deviceId) {
+				const id = Number(deviceId);
+				if (!presenceByDeviceId.has(id)) {
+					presenceByDeviceId.set(id, { connectedAt: Date.now(), socketIds: new Set([`sim-${id}`]) });
+				}
+				logLine(`[socket:replay] connected client ${id}`);
+			},
+			status(deviceId, partial) {
+				const id = Number(deviceId);
+				if (!partial || typeof partial !== 'object' || Array.isArray(partial)) return;
+				applyDeviceStatus(id, partial);
+			},
+			pose(deviceId, position, quaternion) {
+				broadcast('cg:pose', {
+					position,
+					quaternion,
+					deviceId: Number(deviceId),
+					at: Date.now(),
+				});
+			},
+			disconnect(deviceId) {
+				const id = Number(deviceId);
+				for (const channel of statusChannels) {
+					channel.entries.delete(id);
+				}
+				coreStatusStates.delete(id);
+				immersedAtByDeviceId.delete(id);
+				presenceByDeviceId.delete(id);
+				logLine(`[socket:replay] disconnected client ${id}`);
+			},
 		},
 		registerRelayEvents(defs) {
 			const defsArray = Array.isArray(defs) ? defs : [defs];

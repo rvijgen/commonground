@@ -5,6 +5,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { createServer, attachSocketRelay } from './server/index.js';
+import { startStreamRecorder } from './server/recorder.js';
+import { startStreamReplay } from './server/replay.js';
 import { runDashboard, createStatusFromFields } from './dashboard/index.js';
 
 function parseArgs(argv) {
@@ -39,13 +41,18 @@ async function loadConfig(cwd, explicitPath) {
 }
 
 function printHelp() {
-	console.log('Usage: commonground serve [--space <id>] [--config <path>] [--http-port <port>] [--https-port <port>] [--sync|--no-sync] [--open]');
+	console.log('Usage: commonground serve [--space <id>] [--config <path>] [--http-port <port>] [--https-port <port>] [--sync|--no-sync] [--open] [--save [name]] [--replay <files>]');
 	console.log('');
 	console.log('Serves the current directory plus the CommonGround anchor/mesh API, the');
 	console.log('cg.sync/cg.status socket channels, and (when configured) the dashboard.');
 	console.log('Settings come from commonground.config.js in the current directory; all');
 	console.log('optional. Without any config the current directory is served at / with the');
 	console.log('API and socket channels on and no dashboard.');
+	console.log('');
+	console.log('--save [name]    record the headset pose/status stream to');
+	console.log('                 data/recordings/<name>.ndjson (default: timestamped name)');
+	console.log('--replay <files> comma-separated recordings replayed as headsets 1..N');
+	console.log('                 (names resolve against data/recordings/, .ndjson optional)');
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -188,6 +195,21 @@ if (config.dashboard && config.dashboard.enabled !== false) {
 	});
 }
 
+// --save [name] (or record: true|'name' in config): record the headset
+// pose/status stream to <dataDir>/recordings/<name>.ndjson so the session
+// can be replayed later with --replay. The recorder is created before the
+// relay — its taps are relay options.
+const recordOption = args.save !== undefined ? args.save : config.record;
+let recorder = null;
+if (recordOption) {
+	const recordingsDir = path.join(dataDir, 'recordings');
+	const name = recordOption === true || recordOption === '1'
+		? `recording-${new Date().toISOString().replace(/[:.]/g, '-')}`
+		: String(recordOption);
+	const fileName = name.endsWith('.ndjson') ? name : `${name}.ndjson`;
+	recorder = startStreamRecorder({ filePath: path.join(recordingsDir, fileName), logLine });
+}
+
 relay = attachSocketRelay(
 	[
 		{ server: server.httpServer, label: 'http' },
@@ -198,6 +220,7 @@ relay = attachSocketRelay(
 		status: config.status !== false,
 		streamDefault: config.streamDefault !== false,
 		onLog: dashboard ? (line) => dashboard.writeLogLine(line) : undefined,
+		...(recorder ? { onPose: recorder.onPose, onStatus: recorder.onStatus } : {}),
 		// Same immersion predicate as the CLI dashboard, so relay-tracked
 		// immersion times (api/headsets, desktop HUD) match the TUI.
 		...(typeof dashboardSection.hasEnteredImmersion === 'function'
@@ -227,10 +250,39 @@ if (args.open === true || args.open === '1' || args.open === 'true' || config.op
 server.listen();
 logLine(`Serving ${cwd} (space: ${server.spaceId})`);
 
+// --replay <files> (or replay: [...] in config): replay recordings as
+// simulated headsets 1..N. Names resolve against <dataDir>/recordings/
+// when not found as given; the .ndjson extension is optional.
+const replayOption = args.replay !== undefined ? args.replay : config.replay;
+let replay = null;
+if (replayOption && replayOption !== true) {
+	const recordingsDir = path.join(dataDir, 'recordings');
+	const names = Array.isArray(replayOption) ? replayOption : String(replayOption).split(',');
+	const files = names
+		.map((name) => String(name).trim())
+		.filter(Boolean)
+		.map((name) => {
+			const candidates = [
+				path.resolve(cwd, name),
+				path.join(recordingsDir, name),
+				path.join(recordingsDir, `${name}.ndjson`),
+			];
+			const found = candidates.find((candidate) => fs.existsSync(candidate));
+			if (!found) logLine(`[replay] recording not found: ${name}`);
+			return found;
+		})
+		.filter(Boolean);
+	if (files.length > 0) {
+		replay = startStreamReplay({ relay, files, logLine });
+	}
+}
+
 let shuttingDown = false;
 function shutdown() {
 	if (shuttingDown) return;
 	shuttingDown = true;
+	replay?.stop();
+	recorder?.close();
 	for (const ioServer of relay.ioServers) {
 		ioServer.close();
 	}

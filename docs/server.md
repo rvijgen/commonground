@@ -296,3 +296,32 @@ cosmetic `title`/`heading`/`description` keep their meaning; explicit
 `links`/`headsetLinks` replace the generated lists entirely. Without an
 `appHttpsPort` (standalone classic-mode dashboards) the generated lists are
 empty.
+
+## Recording & replay
+
+`--save [name]` (config: `record: true | 'name'`) records the headset
+pose/status stream to `<dataDir>/recordings/<name>.ndjson` (default name:
+`recording-<timestamp>`). One NDJSON event per line — `{t, kind: 'pose' |
+'status', deviceId, ...}` with `t` in ms since recording start. Poses are
+the cg:pose stream exactly as forwarded by the relay; status events carry
+the full merged cg:status state.
+
+`--replay <files>` (config: `replay: [...]`) replays recordings as
+simulated headsets — comma-separated names that resolve against
+`<dataDir>/recordings/` (`.ndjson` optional). Each file becomes one
+headset, deviceIds assigned by file order (1..N): connect → events on
+their recorded timing → disconnect at end of track. The simulation drives
+the same relay state, log lines and broadcasts as real headsets, so the
+TUI, session logs, `api/headsets` and the desktop stream figures behave
+exactly as during a live session. A recording with several device tracks
+(a multi-headset run) contributes its dominant track. Replay starts 2s
+after server start and plays once.
+
+Typical flow — record one headset per run, then simulate four users:
+
+```bash
+npm run demo -- --save walk1   # …walk the space with headset 1, repeat
+npm run demo -- --replay walk1,walk2,walk3,walk4
+```
+
+Note the `--`: npm only forwards flags after it.
