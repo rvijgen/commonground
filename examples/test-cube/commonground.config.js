@@ -24,8 +24,5 @@ export default {
 		// enteredImmersion itself on XR session start; apps add their own
 		// fields via cg.status.update().
 		statusFields: { enteredImmersion: 'boolean' },
-		// Fully generated launch page: one row per headset with a launch
-		// link and a Setup (admin) link, color-coded per headset.
-		helperPage: {},
 	},
 };
