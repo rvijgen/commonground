@@ -5,6 +5,11 @@ const STALE_POSE_MS = 1500;
 const INTERPOLATE_PER_SECOND = 12;
 const WINDOW_WIDTH = 480;
 const WINDOW_HEIGHT = 270;
+// New windows stack vertically: same left edge, each below the previous.
+const STACK_LEFT = 60;
+const STACK_TOP = 60;
+const STACK_GAP = 12;
+const TITLE_BAR_HEIGHT = 26;
 const HUD_FONT = '12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
 
 /**
@@ -64,7 +69,6 @@ export class StreamMirrors {
 		this._unsubscribePose = null;
 		this._lastFrameAt = 0;
 		this._savedViewport = new Vector4();
-		this._openCount = 0;
 	}
 
 	start() {
@@ -141,14 +145,18 @@ export class StreamMirrors {
 
 	_buildWindow(state) {
 		const doc = this._doc;
-		const offset = 60 + (this._openCount++ % 6) * 28;
+		// Stack under the already-open windows; closing one frees its slot
+		// for the next open (positions stay put once shown — draggable).
+		const slot = this._windows.size;
+		const left = STACK_LEFT;
+		const top = STACK_TOP + slot * (TITLE_BAR_HEIGHT + WINDOW_HEIGHT + STACK_GAP);
 
 		const win = doc.createElement('div');
 		win.className = 'commonground-stream-mirror';
 		win.style.cssText = [
 			'position:fixed',
-			`left:${offset}px`,
-			`top:${offset}px`,
+			`left:${left}px`,
+			`top:${top}px`,
 			`width:${WINDOW_WIDTH}px`,
 			'z-index:1200',
 			'border-radius:8px',
