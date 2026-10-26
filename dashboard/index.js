@@ -437,7 +437,9 @@ export function runDashboard(config = {}) {
 		headsetSessionId: new Map(headsetIds.map((id) => [id, null])),
 		headsetStatus: new Map(headsetIds.map((id) => [id, createDefault()])),
 		extraConnections: new Map(connections.map((label) => [label, false])),
-		serverIps: [],
+		// LAN addresses of this machine, shown as "Server IP:" in the TUI.
+		// Detected at startup — independent of whether the helper page binds.
+		serverIps: getLanIpCandidates(),
 		recentLogs: [],
 	};
 
@@ -837,9 +839,7 @@ export function runDashboard(config = {}) {
 			helperServer.listen(port, '0.0.0.0', () => {
 				const actualPort = helperServer.address() && helperServer.address().port;
 				writeLogLine(`[helper] Permission page running on http://localhost:${actualPort}`);
-				const lanIps = getLanIpCandidates();
-				dashboardState.serverIps = lanIps;
-				for (const ip of lanIps) {
+				for (const ip of getLanIpCandidates()) {
 					writeLogLine(
 						`[helper] Open on Quest: http://${ip}${actualPort === 80 ? '' : `:${actualPort}`}`
 					);
