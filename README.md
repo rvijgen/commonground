@@ -37,6 +37,8 @@ npm run demo
 
 - Copy the test-cube example to start a new project and run with npm run 'project-name'
 
+![Screenshot](assets/helper.png)
+
 ## Documentation
 
 - [docs/server.md](docs/server.md) — running and embedding the server, spaces, the anchors/mesh API, the socket relay and the `commonground serve` CLI config
