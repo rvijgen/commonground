@@ -5,8 +5,9 @@ import { Box3, Group, Vector3 } from 'three';
  * figure's feet-center, so callers can place the group (or a clone of it)
  * directly at a ground position. FBX exports are often in centimeters: a
  * figure taller than 10 raw units is assumed to be cm and scaled to meters.
- * Materials are forced matte (metalness 0, roughness 1 where present) — the
- * bundled figure otherwise renders glossy/metallic.
+ * Materials are forced matte — the bundled figure otherwise renders glossy.
+ * FBXLoader produces MeshPhongMaterial, so specular/shininess are zeroed in
+ * addition to metalness/roughness (which only exist on MeshStandardMaterial).
  *
  * Shared by the desktop origin reference figure (Desktop.loadReferenceFigure)
  * and the per-headset cg.stream figures (StreamFigures).
@@ -21,6 +22,8 @@ export async function loadFigureTemplate(url) {
 			if (!material) continue;
 			if ('metalness' in material) material.metalness = 0;
 			if ('roughness' in material) material.roughness = 1;
+			if ('shininess' in material) material.shininess = 0;
+			if (material.specular) material.specular.setScalar(0);
 			material.needsUpdate = true;
 		}
 	});
