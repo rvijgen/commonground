@@ -146,10 +146,21 @@ const server = await createServer({
 	// The helper (quicklaunch) page is on by default; helperPage: false in
 	// the project config disables it. Also lets GET api/client-config
 	// advertise the helper page URL (desktop HUD hint); null when disabled.
+	// The page is served by the dashboard below, so no dashboard → no page.
 	helperPage: (() => {
-		const hp = config.dashboard && typeof config.dashboard === 'object' ? config.dashboard.helperPage : undefined;
+		if (!config.dashboard || typeof config.dashboard !== 'object' || config.dashboard.enabled === false) return null;
+		const hp = config.dashboard.helperPage;
 		if (hp === false || hp === null) return null;
-		return { port: hp && hp !== true ? hp.port : undefined };
+		return {
+			port: hp && hp !== true ? hp.port : undefined,
+			// The dashboard's helper server may fall back to another port
+			// (80 → 3000) or fail to bind entirely; advertise the port it
+			// ACTUALLY bound. Read lazily per request — the dashboard is
+			// created after the app server, and the bind is async.
+			boundPort: () => (dashboard?.helperServer?.listening
+				? dashboard.helperServer.address()?.port ?? null
+				: null),
+		};
 	})(),
 	extraRoutes: (app, context) => {
 		for (const route of routes) {
@@ -187,6 +198,10 @@ if (config.dashboard && config.dashboard.enabled !== false) {
 		appHttpsPort: httpsPort,
 		appRoutes: routes,
 		...dashboardConfig,
+		// The helper (quicklaunch) page is on by default; helperPage: false
+		// in the project config disables it. runDashboard itself defaults it
+		// to off (standalone dashboards opt in), so the CLI flips the default.
+		helperPage: dashboardConfig.helperPage ?? true,
 		// Merged status shape: framework-stamped enteredImmersion plus the
 		// project's own statusFields (explicit createDefaultStatus /
 		// summarizeSession hooks in dashboardConfig still win downstream).

@@ -377,7 +377,8 @@ function createHelperPage({ pageConfig, host, headsets }) {
  *   appRoutes          - top-level project routes [{ path, file, label? }];
  *                        routes with a `label` become helper-page quick links
  *   helperPage         - null to disable; true or {} for a fully generated
- *                        page, or:
+ *                        page, or: (`commonground serve` defaults this to true
+ *                        — standalone dashboards opt in explicitly)
  *                        { port = 80, fallbackPort = 3000, title, heading,
  *                          description, links: [{ label, href }],
  *                          headsetLinks: [{ label, href }] | (headset, host) => [{ label, href }] }
@@ -823,7 +824,8 @@ export function runDashboard(config = {}) {
 
 			const port = portsToTry[index];
 
-			helperServer.once('error', (error) => {
+			const onError = (error) => {
+				helperServer.removeListener('listening', onListening);
 				if ((error.code === 'EACCES' || error.code === 'EADDRINUSE') && index + 1 < portsToTry.length) {
 					writeLogLine(
 						`[helper] Port ${port} unavailable (${error.code}), trying ${portsToTry[index + 1]}.`,
@@ -834,9 +836,9 @@ export function runDashboard(config = {}) {
 				}
 
 				writeLogLine(`[helper] Failed to start helper page: ${error.message}`, true);
-			});
-
-			helperServer.listen(port, '0.0.0.0', () => {
+			};
+			const onListening = () => {
+				helperServer.removeListener('error', onError);
 				const actualPort = helperServer.address() && helperServer.address().port;
 				writeLogLine(`[helper] Permission page running on http://localhost:${actualPort}`);
 				for (const ip of getLanIpCandidates()) {
@@ -844,7 +846,14 @@ export function runDashboard(config = {}) {
 						`[helper] Open on Quest: http://${ip}${actualPort === 80 ? '' : `:${actualPort}`}`
 					);
 				}
-			});
+			};
+
+			// once(), not listen()'s callback: a callback registered by a failed
+			// listen() stays subscribed to 'listening' and would fire again when
+			// the fallback port binds, printing these lines twice.
+			helperServer.once('error', onError);
+			helperServer.once('listening', onListening);
+			helperServer.listen(port, '0.0.0.0');
 		}
 
 		listenAtIndex(0);

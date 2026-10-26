@@ -350,14 +350,19 @@ export async function createServer(options = {}) {
 			syncDefault: syncDefault !== false,
 			// Where the headset launch (helper) page lives, for the desktop
 			// HUD's "open this on your Quest" hint. Null when the project runs
-			// no helper page. Mirrors the dashboard's preferred port — if that
-			// port was unavailable the dashboard falls back silently, so prefer
-			// the exact URLs printed in the TUI when in doubt.
+			// no helper page. The dashboard serves the helper page and may fall
+			// back to another port (80 → 3000) or fail to bind entirely, so the
+			// ACTUAL bound port (helperPage.boundPort) wins; without it the
+			// configured port is advertised as before. Null while unbound hides
+			// the link rather than pointing at a dead URL.
 			helperUrl: (() => {
 				if (!helperPage) return null;
 				const ip = getLanIpv4Addresses()[0];
 				if (!ip) return null;
-				const port = Number(helperPage.port) || 80;
+				const port = typeof helperPage.boundPort === 'function'
+					? helperPage.boundPort()
+					: (Number(helperPage.port) || 80);
+				if (!port) return null;
 				return `http://${ip}${port === 80 ? '' : `:${port}`}/`;
 			})(),
 			headsets: (Array.isArray(headsets) ? headsets : [])
