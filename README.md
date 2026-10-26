@@ -25,6 +25,8 @@ npm install
 npm run demo
 ```
 
+![Screenshot](assets/dashboard.gif)
+
 `npm run demo` runs the bundled example project (`examples/test-cube/`). It starts the commonground server and opens the Dashboard in a new browser window.
 
 - Open the ip address that is shown in the dashboard on the headset to view the quicklaunch menu. Click "Setup Headset 1" to align the scene in physical space. Once Aligned, click "Save Anchors" and exit Immersion. Now you can click "Headset 1" from the quicklaunch menu and find the scene where you aligned it. Repeat for headsets 2,3,4 etc.
