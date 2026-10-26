@@ -51,8 +51,9 @@ function printHelp() {
 	console.log('');
 	console.log('--save [name]    record the headset pose/status stream to');
 	console.log('                 data/recordings/<name>.ndjson (default: timestamped name)');
-	console.log('--replay <files> comma-separated recordings replayed as headsets 1..N');
-	console.log('                 (names resolve against data/recordings/, .ndjson optional)');
+	console.log('--replay <files> recordings replayed as headsets 1..N, comma- or');
+	console.log('                 space-separated (names resolve against data/recordings/,');
+	console.log('                 .ndjson optional)');
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -252,12 +253,16 @@ logLine(`Serving ${cwd} (space: ${server.spaceId})`);
 
 // --replay <files> (or replay: [...] in config): replay recordings as
 // simulated headsets 1..N. Names resolve against <dataDir>/recordings/
-// when not found as given; the .ndjson extension is optional.
+// when not found as given; the .ndjson extension is optional. Both
+// `--replay walk1,walk2` and `--replay walk1 walk2` work: the parser only
+// attaches the first name to the flag, the rest land as positional args
+// after `serve` and are picked up here.
 const replayOption = args.replay !== undefined ? args.replay : config.replay;
 let replay = null;
 if (replayOption && replayOption !== true) {
 	const recordingsDir = path.join(dataDir, 'recordings');
-	const names = Array.isArray(replayOption) ? replayOption : String(replayOption).split(',');
+	const names = Array.isArray(replayOption) ? [...replayOption] : String(replayOption).split(',');
+	names.push(...args._.slice(1));
 	const files = names
 		.map((name) => String(name).trim())
 		.filter(Boolean)

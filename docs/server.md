@@ -307,7 +307,7 @@ the cg:pose stream exactly as forwarded by the relay; status events carry
 the full merged cg:status state.
 
 `--replay <files>` (config: `replay: [...]`) replays recordings as
-simulated headsets — comma-separated names that resolve against
+simulated headsets — comma- or space-separated names that resolve against
 `<dataDir>/recordings/` (`.ndjson` optional). Each file becomes one
 headset, deviceIds assigned by file order (1..N): connect → events on
 their recorded timing → disconnect at end of track. The simulation drives
