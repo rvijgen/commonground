@@ -14,6 +14,16 @@ import path from 'node:path';
  */
 export function startStreamRecorder({ filePath, logLine = () => {} }) {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	// Never append to an existing recording: two sessions in one file replay
+	// as one interleaved track (timestamps restart per session). Auto-uniquify
+	// instead of overwriting, so no recording is ever lost.
+	if (fs.existsSync(filePath)) {
+		const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const ext = path.extname(filePath);
+		const uniquePath = path.join(path.dirname(filePath), `${path.basename(filePath, ext)}-${stamp}${ext}`);
+		logLine(`[record] ${filePath} already exists — recording to ${uniquePath} instead`);
+		filePath = uniquePath;
+	}
 	const startedAt = Date.now();
 	let eventCount = 0;
 	let writeErrorLogged = false;

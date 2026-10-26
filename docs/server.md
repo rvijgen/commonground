@@ -304,7 +304,11 @@ pose/status stream to `<dataDir>/recordings/<name>.ndjson` (default name:
 `recording-<timestamp>`). One NDJSON event per line — `{t, kind: 'pose' |
 'status', deviceId, ...}` with `t` in ms since recording start. Poses are
 the cg:pose stream exactly as forwarded by the relay; status events carry
-the full merged cg:status state.
+the full merged cg:status state. Recordings are never appended to: reusing
+an existing name writes to `<name>-<timestamp>.ndjson` instead, since two
+sessions in one file would replay as one interleaved track (the replay
+detects such legacy files, logs a warning and plays only the first
+session).
 
 `--replay <files>` (config: `replay: [...]`) replays recordings as
 simulated headsets — comma- or space-separated names that resolve against

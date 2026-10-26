@@ -50,6 +50,17 @@ function loadTrack(filePath, logLine) {
 		if (!best || track.poses > best.poses) best = track;
 	}
 	if (!best || best.events.length === 0) return null;
+	// A file with a timestamp regression is two sessions appended together
+	// (a pre-uniquify --save rerun). Sorting would interleave them into one
+	// glitching track, so keep only the first session and say so. Check in
+	// file order, BEFORE sorting.
+	for (let i = 1; i < best.events.length; i++) {
+		if (best.events[i].t < best.events[i - 1].t) {
+			logLine(`[replay] ${filePath}: timestamps restart at event ${i + 1} — file holds multiple sessions, replaying only the first`);
+			best.events.length = i;
+			break;
+		}
+	}
 	best.events.sort((a, b) => a.t - b.t);
 	return best.events;
 }
