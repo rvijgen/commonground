@@ -48,3 +48,5 @@ npm run demo
 ## License
 
 [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — free for noncommercial use with attribution. See [LICENSE](LICENSE).
+
+Commonground is developed by Studio Richard Vijgen as part of HEFT (Heritage for the Future), supported by Creative Industries Fund NL through the Artistic & Design Research for Immersive Experiences (ADRIE) programme.
