@@ -2,6 +2,8 @@ import {
     DataTexture,
     FloatType,
     RedFormat,
+    RedIntegerFormat,
+    UnsignedShortType,
     ClampToEdgeWrapping,
     NearestFilter,
     Matrix4,
@@ -42,10 +44,13 @@ export class XRDepthOcclusion {
         this._binding   = null;
         this._session   = null;
         this._viewData  = [];           // populated by update(), consumed by renderPrePass()
+        // Pooled per-eye slots (max 2 XR views) with reusable typed-array
+        // matrices, so the per-frame update allocates nothing. Slots are
+        // filled by _updateInner and pushed into _viewData each frame.
+        this._viewSlots = [null, null];
         this._lastBound = null;         // last matched view data from bindUniformsForCamera
-        this._depthTexes = [null, null]; // one R32F texture per eye
+        this._depthTexes = [null, null]; // one R16UI texture per eye
         this._threeDepthTexes = [null, null];
-        this._depthFloatBuffers = [null, null];
         this._depthDims  = [null, null]; // {w,h} to detect size changes
         this._xrFramebuffer = null;
         this._cpuUnavailableWarned = false;
@@ -263,7 +268,7 @@ export class XRDepthOcclusion {
         }
         this._xrFramebuffer = layer.framebuffer || null;
 
-        this._viewData = [];
+        this._viewData.length = 0; // reuse the array; slots are pooled below
 
         // Prefer CPU, but allow GPU fallback when runtime does not grant CPU.
         if (!this._binding && frame.session.depthUsage === 'gpu-optimized') {
@@ -321,25 +326,13 @@ export class XRDepthOcclusion {
                 if (!fb) {
                     fb = subImage ? subImage.framebuffer || null : null;
                 }
-                this._viewData.push({
-                    mode: 'gpu',
-                    tex: gdi.texture,
-                    uvTransform: gdi.normDepthBufferFromNormView.matrix,
-                    projMatrix: view.projectionMatrix,
-                    projInvMatrix: Array.from(this._tmpMat4.fromArray(view.projectionMatrix).invert().elements),
-                    viewMatrix: Array.from(view.transform.inverse.matrix),
-                    viewInvMatrix: Array.from(view.transform.matrix),
-                    layerIndex: texLayer,
-                    rawValueToMeters: gdi.rawValueToMeters,
-                    framebuffer: fb,
-                    vp: { x: vp.x, y: vp.y, w: vp.width, h: vp.height },
-                });
+                this._viewData.push(this._fillViewSlot(
+                    i, 'gpu', gdi.texture, null,
+                    gdi.normDepthBufferFromNormView.matrix, view, texLayer,
+                    gdi.rawValueToMeters, fb, vp,
+                ));
 
-                this._debug[`eye${i}`] = {
-                    depth: { w: gdi.width, h: gdi.height },
-                    viewport: { x: vp.x, y: vp.y, w: vp.width, h: vp.height },
-                    rawValueToMeters: gdi.rawValueToMeters,
-                };
+                this._fillDebugEye(i, gdi.width, gdi.height, vp, gdi.rawValueToMeters);
                 continue;
             }
 
@@ -357,34 +350,36 @@ export class XRDepthOcclusion {
             const d = this._depthDims[i];
             if (!d || d.w !== di.width || d.h !== di.height) {
                 gl.bindTexture(gl.TEXTURE_2D, this._depthTexes[i]);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F,
-                    di.width, di.height, 0, gl.RED, gl.FLOAT, null);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI,
+                    di.width, di.height, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, null);
                 this._depthDims[i] = { w: di.width, h: di.height };
 
-                const buf = new Float32Array(di.width * di.height);
-                const tex = new DataTexture(buf, di.width, di.height, RedFormat, FloatType);
+                // Raw uint16 texture for custom material sampling (usampler2D;
+                // multiply by uRawToMeters in GLSL). Integer textures require
+                // NEAREST filtering.
+                const tex = new DataTexture(
+                    new Uint16Array(di.width * di.height), di.width, di.height,
+                    RedIntegerFormat, UnsignedShortType);
                 tex.minFilter = NearestFilter;
                 tex.magFilter = NearestFilter;
                 tex.wrapS = ClampToEdgeWrapping;
                 tex.wrapT = ClampToEdgeWrapping;
                 tex.generateMipmaps = false;
                 tex.needsUpdate = true;
-                this._depthFloatBuffers[i] = buf;
                 this._threeDepthTexes[i] = tex;
             }
 
-            // Convert uint16 raw values → float metres.
-            const raw    = new Uint16Array(di.data);
-            const floats = this._depthFloatBuffers[i];
-            const scale  = di.rawValueToMeters;
-            for (let j = 0; j < raw.length; j++) floats[j] = raw[j] * scale;
+            // Upload raw uint16 values unchanged — the pre-pass shader scales
+            // by rawValueToMeters. No per-pixel JS conversion loop.
+            const raw = new Uint16Array(di.data);
 
             // Keep Three texture in sync for custom material sampling.
+            this._threeDepthTexes[i].image.data = raw;
             this._threeDepthTexes[i].needsUpdate = true;
 
             gl.bindTexture(gl.TEXTURE_2D, this._depthTexes[i]);
             gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0,
-                di.width, di.height, gl.RED, gl.FLOAT, floats);
+                di.width, di.height, gl.RED_INTEGER, gl.UNSIGNED_SHORT, raw);
             gl.bindTexture(gl.TEXTURE_2D, null);
 
             const vp = this._getViewportForView(layer, xrBinding || this._binding, view);
@@ -394,25 +389,13 @@ export class XRDepthOcclusion {
                 const subImage = this._getViewSubImage(layer, xrBinding || this._binding, view);
                 fb = subImage ? subImage.framebuffer || null : null;
             }
-            this._viewData.push({
-                mode:        'cpu',
-                tex:         this._depthTexes[i],
-                threeTex:    this._threeDepthTexes[i],
-                uvTransform: di.normDepthBufferFromNormView.matrix, // Float32Array[16]
-                projMatrix:  view.projectionMatrix,                  // Float32Array[16]
-                projInvMatrix: Array.from(this._tmpMat4.fromArray(view.projectionMatrix).invert().elements),
-                viewMatrix:  Array.from(view.transform.inverse.matrix),
-                viewInvMatrix: Array.from(view.transform.matrix),
-                layerIndex:  i,
-                framebuffer: fb,
-                vp:          { x: vp.x, y: vp.y, w: vp.width, h: vp.height },
-            });
+            this._viewData.push(this._fillViewSlot(
+                i, 'cpu', this._depthTexes[i], this._threeDepthTexes[i],
+                di.normDepthBufferFromNormView.matrix, view, i,
+                di.rawValueToMeters, fb, vp,
+            ));
 
-            this._debug[`eye${i}`] = {
-                depth: { w: di.width, h: di.height },
-                viewport: { x: vp.x, y: vp.y, w: vp.width, h: vp.height },
-                rawValueToMeters: di.rawValueToMeters,
-            };
+            this._fillDebugEye(i, di.width, di.height, vp, di.rawValueToMeters);
         }
 
         this._debug.views = this._viewData.length;
@@ -426,8 +409,75 @@ export class XRDepthOcclusion {
         // textures (e.g. TEXTURE_COMPARE_MODE may be read-only on Quest 3).
         // Errors left here would otherwise be attributed to Three.js's next
         // GL call (GetShaderiv / GetProgramiv) and corrupt its program cache.
-        // eslint-disable-next-line no-empty
-        while (gl.getError() !== gl.NO_ERROR) {}
+        // Only the GPU path touches runtime-owned textures, and gl.getError is
+        // a potential driver sync point — skip the drain on CPU-path frames.
+        if (this._viewData.some((vd) => vd.mode === 'gpu')) {
+            // eslint-disable-next-line no-empty
+            while (gl.getError() !== gl.NO_ERROR) {}
+        }
+    }
+
+    /**
+     * Fill the pooled per-eye view slot (created once per eye index) and
+     * return it for pushing into _viewData. Runs every XR frame, so it
+     * allocates nothing: matrices are copied into persistent Float32Arrays
+     * and the viewport object is reused. Slots carry the superset of CPU/GPU
+     * fields; consumers read what their mode needs.
+     */
+    _fillViewSlot(i, mode, tex, threeTex, uvTransform, view, layerIndex, rawValueToMeters, framebuffer, vp) {
+        let slot = this._viewSlots[i];
+        if (!slot) {
+            slot = this._viewSlots[i] = {
+                mode: null,
+                tex: null,
+                threeTex: null,
+                uvTransform: null,
+                projMatrix: null,
+                projInvMatrix: new Float32Array(16),
+                viewMatrix: new Float32Array(16),
+                viewInvMatrix: new Float32Array(16),
+                layerIndex: 0,
+                rawValueToMeters: 1.0,
+                framebuffer: null,
+                vp: { x: 0, y: 0, w: 0, h: 0 },
+            };
+        }
+        slot.mode = mode;
+        slot.tex = tex;
+        slot.threeTex = threeTex;
+        slot.uvTransform = uvTransform;
+        slot.projMatrix = view.projectionMatrix;
+        slot.projInvMatrix.set(this._tmpMat4.fromArray(view.projectionMatrix).invert().elements);
+        slot.viewMatrix.set(view.transform.inverse.matrix);
+        slot.viewInvMatrix.set(view.transform.matrix);
+        slot.layerIndex = layerIndex;
+        slot.rawValueToMeters = rawValueToMeters;
+        slot.framebuffer = framebuffer;
+        slot.vp.x = vp.x;
+        slot.vp.y = vp.y;
+        slot.vp.w = vp.width;
+        slot.vp.h = vp.height;
+        return slot;
+    }
+
+    /** Pooled per-eye debug info — same no-allocation discipline as slots. */
+    _fillDebugEye(i, w, h, vp, rawValueToMeters) {
+        const key = `eye${i}`;
+        let dbg = this._debug[key];
+        if (!dbg) {
+            dbg = this._debug[key] = {
+                depth: { w: 0, h: 0 },
+                viewport: { x: 0, y: 0, w: 0, h: 0 },
+                rawValueToMeters: 1,
+            };
+        }
+        dbg.depth.w = w;
+        dbg.depth.h = h;
+        dbg.viewport.x = vp.x;
+        dbg.viewport.y = vp.y;
+        dbg.viewport.w = vp.width;
+        dbg.viewport.h = vp.height;
+        dbg.rawValueToMeters = rawValueToMeters;
     }
 
     /**
@@ -527,6 +577,7 @@ export class XRDepthOcclusion {
             } else {
                 gl.useProgram(this._program);
                 gl.uniform1i(this._locTex, 0);
+                gl.uniform1f(this._locRawToMeters, vd.rawValueToMeters != null ? vd.rawValueToMeters : 1.0);
                 gl.uniformMatrix4fv(this._locUvXform, false, vd.uvTransform);
                 gl.uniformMatrix4fv(this._locProj,    false, vd.projMatrix);
                 gl.uniformMatrix4fv(this._locProjInv, false, vd.projInvMatrix);
@@ -710,9 +761,12 @@ export class XRDepthOcclusion {
         // Fragment shader: sample perpendicular eye-space depth, project to NDC, write gl_FragDepth.
         // Quest 3 CPU depth (rawValueToMeters-scaled uint16) is perpendicular depth, not ray distance —
         // no slant correction needed, same as the GPU path.
+        // The texture holds RAW uint16 values (R16UI); scaling to metres happens
+        // here via uRawToMeters so the upload needs no per-pixel JS conversion.
         const fs = `#version 300 es
             precision highp float;
-            uniform sampler2D uTex;
+            uniform highp usampler2D uTex;
+            uniform float uRawToMeters;
             uniform mat4 uProj;
             uniform mat4 uProjInv;
             uniform mat4 uViewInv;
@@ -725,7 +779,7 @@ export class XRDepthOcclusion {
             in vec2 vViewUv;
             out vec4 fragColor;
             void main() {
-                float metres = texture(uTex, vUv).r;
+                float metres = float(texture(uTex, vUv).r) * uRawToMeters;
                 if (metres < 0.05) discard;
                 if (uUseFloorClear > 0.5 || uClearBoxCount > 0) {
                     vec2 ndc = vViewUv * 2.0 - 1.0;
@@ -781,6 +835,7 @@ export class XRDepthOcclusion {
         }
 
         this._locTex     = gl.getUniformLocation(this._program, 'uTex');
+        this._locRawToMeters = gl.getUniformLocation(this._program, 'uRawToMeters');
         this._locUvXform = gl.getUniformLocation(this._program, 'uUvXform');
         this._locProj    = gl.getUniformLocation(this._program, 'uProj');
         this._locProjInv = gl.getUniformLocation(this._program, 'uProjInv');

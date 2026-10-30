@@ -106,6 +106,17 @@ export class CommonGround {
         this._overlayEnabled   = false;
         this._prePassMat       = null;
         this._shaderMat        = null;
+        // Stable scene.onBeforeRender hooks — the render loop re-assigns
+        // scene.onBeforeRender every frame, so these are allocated once
+        // instead of as fresh closures per frame. Both resolve their
+        // dependencies (depthOcclusion, renderer) lazily at call time.
+        this._prePassSceneHook = () => {
+            const ran = this._depthOcclusion.renderPrePass();
+            this.renderer.autoClearDepth = !ran;
+        };
+        this._noPrePassSceneHook = () => {};
+        // Frame counter for throttled semantic-label billboarding.
+        this._labelFrame = 0;
         /** Public handles — set when occlusion is enabled */
         this.depthOcclusion    = null;
         this.depthOverlay      = null;
@@ -678,6 +689,8 @@ export class CommonGround {
         this.renderer = new WebGLRenderer({
             alpha: true,
             antialias: true,
+            // Prefer the discrete/high-clock GPU path on mobile runtimes.
+            powerPreference: 'high-performance',
             // Disable multiview for XR depth occlusion pre-pass compatibility.
             // With multiview enabled, a non-multiview pre-pass can fail to write
             // valid depth to both eye layers on Quest runtimes.
@@ -1590,22 +1603,21 @@ export class CommonGround {
         // Default path is shader-only occlusion; pre-pass is opt-in because on
         // some runtimes it can write mismatched depth and cap occlusion range.
         if (this._depthOcclusion && this._depthOcclusion.isPrePassEnabled()) {
-            const occ = this._depthOcclusion;
             // Default to clearing depth each frame; if pre-pass writes valid
             // sensor depth this frame, keep it by disabling the depth clear.
             this.renderer.autoClearDepth = true;
-            this.scene.onBeforeRender = () => {
-                const ran = occ.renderPrePass();
-                this.renderer.autoClearDepth = !ran;
-            };
+            this.scene.onBeforeRender = this._prePassSceneHook;
         } else {
-            this.scene.onBeforeRender = () => {};
+            this.scene.onBeforeRender = this._noPrePassSceneHook;
             this.renderer.autoClearDepth = true;
         }
 
         try {
             this.ratk.update();
-            this._updateSemanticLabels();
+            // Billboard re-aim every other frame — imperceptible at 72-90 Hz,
+            // halves the per-frame lookAt cost over all room-scan labels.
+            this._labelFrame += 1;
+            if (this._labelFrame % 2 === 0) this._updateSemanticLabels();
             this.renderer.render(this.scene, this.camera);
         } catch (error) {
             console.error('Error during render loop:', error);
