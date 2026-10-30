@@ -1208,8 +1208,8 @@ export class XRDepthOcclusion {
                 else                       pos = vec2(-1.,  3.);
                 vec2 rawUv = 0.5 * (pos + 1.0);
                 vViewUv = rawUv;
-                vEye = gl_ViewID_OVR;
-                bool e0 = gl_ViewID_OVR == 0;
+                vEye = int(gl_ViewID_OVR);
+                bool e0 = gl_ViewID_OVR == 0u;
                 vUv = ((e0 ? uUvXform0 : uUvXform1) * vec4(rawUv, 0., 1.)).xy;
                 vProj = e0 ? uProj0 : uProj1;
                 vProjInv = e0 ? uProjInv0 : uProjInv1;
@@ -1354,8 +1354,8 @@ export class XRDepthOcclusion {
                 else                       pos = vec2(-1.,  3.);
                 vec2 rawUv = 0.5 * (pos + 1.0);
                 vViewUv = rawUv;
-                vEye = gl_ViewID_OVR;
-                bool e0 = gl_ViewID_OVR == 0;
+                vEye = int(gl_ViewID_OVR);
+                bool e0 = gl_ViewID_OVR == 0u;
                 vUv = ((e0 ? uUvXform0 : uUvXform1) * vec4(rawUv, 0., 1.)).xy;
                 vProj = e0 ? uProj0 : uProj1;
                 vProjInv = e0 ? uProjInv0 : uProjInv1;
