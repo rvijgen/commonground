@@ -75,6 +75,7 @@ export class XRDepthOcclusion {
         this._mvLoc = null;
         this._readyMV = false;
         this._mvGpuWarned = false;
+        this._mvError = null;
         this._tmpMat4 = new Matrix4();
         // 1×1 placeholder so uDepthTex is never null (avoids "no texture on unit 0" warning).
         const placeholder = new DataTexture(new Float32Array([0]), 1, 1, RedFormat, FloatType);
@@ -724,7 +725,13 @@ export class XRDepthOcclusion {
      * The viewport is whatever Three set for the XR target (full layer).
      */
     _renderPrePassMultiview(gl) {
-        if (this._viewData.length < 2) return false;
+        if (this._viewData.length < 2) {
+            // Don't mask a specific per-view failure from update().
+            if (this._debug.reason === 'ok' || this._debug.reason === 'ok-mv') {
+                this._debug.reason = 'mv-not-enough-views';
+            }
+            return false;
+        }
         const a = this._viewData[0];
         const b = this._viewData[1];
         if (a.mode !== 'cpu' || b.mode !== 'cpu') {
@@ -735,9 +742,13 @@ export class XRDepthOcclusion {
                 this._mvGpuWarned = true;
                 console.warn('[XRDepthOcclusion] multiview + GPU runtime depth not supported — pre-pass skipped');
             }
+            this._debug.reason = 'mv-gpu-depth-unsupported';
             return false;
         }
-        if (!this._readyMV && !this._initMV(gl)) return false;
+        if (!this._readyMV && !this._initMV(gl)) {
+            this._debug.reason = `mv-init-failed: ${this._mvError || 'unknown'}`;
+            return false;
+        }
 
         // ── Save GL state (as the per-eye path, plus TEXTURE1) ──────────
         const prevProg     = gl.getParameter(gl.CURRENT_PROGRAM);
@@ -809,6 +820,7 @@ export class XRDepthOcclusion {
         gl.colorMask(prevColorMsk[0], prevColorMsk[1], prevColorMsk[2], prevColorMsk[3]);
         if (prevBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
         this._debug.prePassRan = true;
+        this._debug.reason = 'ok-mv';
         return true;
     }
 
@@ -1072,11 +1084,16 @@ export class XRDepthOcclusion {
 
     /**
      * Compiles the multiview pre-pass program (one draw, both eye layers via
-     * gl_ViewID_OVR). Mirrors _init but with per-eye uniform pairs; sampler
-     * arrays can't be indexed by gl_ViewID_OVR in GLSL ES 3.00, hence the
-     * eye0/eye1 uniform pairs instead of arrays. On failure the pre-pass
-     * stays off — a non-multiview draw into a multiview framebuffer would
-     * write only the first eye layer, giving broken one-eye occlusion.
+     * gl_ViewID_OVR). All view-ID reads happen in the VERTEX shader — plain
+     * GL_OVR_multiview only guarantees gl_ViewID_OVR there; fragment-stage
+     * access needs multiview2 semantics and fails on some drivers. Per-eye
+     * constants (matrices, scale) cross the stage boundary as flat varyings,
+     * which stay exact because the fullscreen triangle is constant across its
+     * surface. Sampler arrays can't be indexed by view id in GLSL ES 3.00,
+     * hence eye0/eye1 sampler uniforms with a fragment-side if/else.
+     * On failure the pre-pass stays off — a non-multiview draw into a
+     * multiview framebuffer would write only the first eye layer, giving
+     * broken one-eye occlusion.
      */
     _initMV(gl) {
         const u16 = this._ensureCpuTexMode(gl) === 'u16';
@@ -1085,8 +1102,21 @@ export class XRDepthOcclusion {
             layout(num_views = 2) in;
             uniform mat4 uUvXform0;
             uniform mat4 uUvXform1;
+            uniform mat4 uProj0;
+            uniform mat4 uProj1;
+            uniform mat4 uProjInv0;
+            uniform mat4 uProjInv1;
+            uniform mat4 uViewInv0;
+            uniform mat4 uViewInv1;
+            uniform float uRawToMeters0;
+            uniform float uRawToMeters1;
             out vec2 vUv;
             out vec2 vViewUv;
+            flat out int vEye;
+            flat out float vRawScale;
+            flat out mat4 vProj;
+            flat out mat4 vProjInv;
+            flat out mat4 vViewInv;
             void main() {
                 vec2 pos;
                 if      (gl_VertexID == 0) pos = vec2(-1., -1.);
@@ -1094,8 +1124,13 @@ export class XRDepthOcclusion {
                 else                       pos = vec2(-1.,  3.);
                 vec2 rawUv = 0.5 * (pos + 1.0);
                 vViewUv = rawUv;
-                mat4 xform = gl_ViewID_OVR == 0 ? uUvXform0 : uUvXform1;
-                vUv = (xform * vec4(rawUv, 0., 1.)).xy;
+                vEye = gl_ViewID_OVR;
+                bool e0 = gl_ViewID_OVR == 0;
+                vUv = ((e0 ? uUvXform0 : uUvXform1) * vec4(rawUv, 0., 1.)).xy;
+                vProj = e0 ? uProj0 : uProj1;
+                vProjInv = e0 ? uProjInv0 : uProjInv1;
+                vViewInv = e0 ? uViewInv0 : uViewInv1;
+                vRawScale = e0 ? uRawToMeters0 : uRawToMeters1;
                 gl_Position = vec4(pos, 0., 1.);
             }`;
 
@@ -1103,14 +1138,8 @@ export class XRDepthOcclusion {
             #extension GL_OVR_multiview : require
             precision highp float;
             ${u16
-                ? 'uniform highp usampler2D uTex0;\n            uniform highp usampler2D uTex1;\n            uniform float uRawToMeters0;\n            uniform float uRawToMeters1;'
+                ? 'uniform highp usampler2D uTex0;\n            uniform highp usampler2D uTex1;'
                 : 'uniform sampler2D uTex0;\n            uniform sampler2D uTex1;'}
-            uniform mat4 uProj0;
-            uniform mat4 uProj1;
-            uniform mat4 uProjInv0;
-            uniform mat4 uProjInv1;
-            uniform mat4 uViewInv0;
-            uniform mat4 uViewInv1;
             uniform float uFloorClearY;
             uniform float uUseFloorClear;
             uniform int uClearBoxCount;
@@ -1118,22 +1147,24 @@ export class XRDepthOcclusion {
             uniform vec3 uClearBoxMax[8];
             in vec2 vUv;
             in vec2 vViewUv;
+            flat in int vEye;
+            flat in float vRawScale;
+            flat in mat4 vProj;
+            flat in mat4 vProjInv;
+            flat in mat4 vViewInv;
             out vec4 fragColor;
             void main() {
-                bool eye0 = gl_ViewID_OVR == 0;
                 ${u16
-                    ? 'float metres = eye0\n                        ? float(texture(uTex0, vUv).r) * uRawToMeters0\n                        : float(texture(uTex1, vUv).r) * uRawToMeters1;'
-                    : 'float metres = eye0\n                        ? texture(uTex0, vUv).r\n                        : texture(uTex1, vUv).r;'}
+                    ? 'float metres = float(texture(vEye == 0 ? uTex0 : uTex1, vUv).r) * vRawScale;'
+                    : 'float metres = texture(vEye == 0 ? uTex0 : uTex1, vUv).r;'}
                 if (metres < 0.05) discard;
-                mat4 projInv = eye0 ? uProjInv0 : uProjInv1;
-                mat4 viewInv = eye0 ? uViewInv0 : uViewInv1;
                 if (uUseFloorClear > 0.5 || uClearBoxCount > 0) {
                     vec2 ndc = vViewUv * 2.0 - 1.0;
-                    vec4 viewFar4 = projInv * vec4(ndc, 1.0, 1.0);
+                    vec4 viewFar4 = vProjInv * vec4(ndc, 1.0, 1.0);
                     vec3 rayDir = normalize(viewFar4.xyz / max(1e-6, viewFar4.w));
                     float denom = max(1e-4, -rayDir.z);
                     vec3 viewPos = rayDir * (metres / denom);
-                    vec3 worldPos = (viewInv * vec4(viewPos, 1.0)).xyz;
+                    vec3 worldPos = (vViewInv * vec4(viewPos, 1.0)).xyz;
                     if (worldPos.y < uFloorClearY) discard;
                     for (int i = 0; i < 8; i++) {
                         if (i >= uClearBoxCount) break;
@@ -1147,8 +1178,7 @@ export class XRDepthOcclusion {
                     }
                 }
                 float zEye = -metres;
-                mat4 proj = eye0 ? uProj0 : uProj1;
-                vec4 clip = proj * vec4(0.0, 0.0, zEye, 1.0);
+                vec4 clip = vProj * vec4(0.0, 0.0, zEye, 1.0);
                 gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 1.0);
                 fragColor = vec4(0.0);
             }`;
@@ -1177,6 +1207,7 @@ export class XRDepthOcclusion {
             if (!gl.getProgramParameter(this._programMV, gl.LINK_STATUS))
                 throw new Error(gl.getProgramInfoLog(this._programMV));
         } catch (e) {
+            this._mvError = e && e.message ? e.message : String(e);
             console.warn('[XRDepthOcclusion] multiview pre-pass shader error:', e);
             return false;
         }
@@ -1185,8 +1216,8 @@ export class XRDepthOcclusion {
         this._mvLoc = {
             tex0: gl.getUniformLocation(p, 'uTex0'),
             tex1: gl.getUniformLocation(p, 'uTex1'),
-            raw0: u16 ? gl.getUniformLocation(p, 'uRawToMeters0') : null,
-            raw1: u16 ? gl.getUniformLocation(p, 'uRawToMeters1') : null,
+            raw0: gl.getUniformLocation(p, 'uRawToMeters0'),
+            raw1: gl.getUniformLocation(p, 'uRawToMeters1'),
             uvXform0: gl.getUniformLocation(p, 'uUvXform0'),
             uvXform1: gl.getUniformLocation(p, 'uUvXform1'),
             proj0: gl.getUniformLocation(p, 'uProj0'),
