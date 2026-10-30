@@ -524,7 +524,7 @@ export class CommonGround {
     setOcclusionEnabled(enabled, options = {}) {
         const nextEnabled = !!enabled;
         this._occlusionEnabled = nextEnabled;
-        const usePrePass = nextEnabled && this._occlusionMode === 'prepass' && !this._forceMultiview;
+        const usePrePass = nextEnabled && this._occlusionMode === 'prepass';
         const rangeMeters = Number.isFinite(options.occlusionRangeMeters)
             ? options.occlusionRangeMeters
             : this._occlusionRangeMeters;
@@ -686,11 +686,10 @@ export class CommonGround {
     }
 
     _setupRenderer() {
-        // Profiling switch: ?multiview=1 enables three.js multiview stereo
-        // rendering (one draw stream for both eyes). The depth pre-pass can't
-        // address both layers of a multiview framebuffer, so occlusion is
-        // disabled when this is on — it exists to measure multiview's gain
-        // before investing in a multiview-aware pre-pass.
+        // ?multiview=1 enables three.js multiview stereo rendering (one draw
+        // stream for both eyes via OCULUS_multiview). The depth pre-pass is
+        // multiview-aware: XRDepthOcclusion switches to a num_views=2 program
+        // that writes both eye layers in one draw.
         this._forceMultiview = typeof window !== 'undefined'
             && new URLSearchParams(window.location.search).get('multiview') === '1';
         this.renderer = new WebGLRenderer({
@@ -993,10 +992,7 @@ export class CommonGround {
         this._prePassMat = this._createPrePassMaterial();
         this._shaderMat  = this._createShaderMaterial();
         // Apply initial mode
-        this._depthOcclusion.setPrePassEnabled(this._occlusionMode === 'prepass' && !this._forceMultiview);
-        if (this._forceMultiview) {
-            console.warn('[CommonGround] ?multiview=1 — occlusion disabled (the depth pre-pass is not multiview-compatible)');
-        }
+        this._depthOcclusion.setPrePassEnabled(this._occlusionMode === 'prepass');
     }
 
     _createPrePassMaterial() {
@@ -1603,7 +1599,7 @@ export class CommonGround {
         // into scene.onBeforeRender so it fires AFTER Three.js has bound its XR
         // render target (WebGLMultiviewRenderTarget) but BEFORE any draw calls.
         // If called before renderer.render() the XR framebuffer isn't bound yet.
-        if (frame && this._depthOcclusion && !this._forceMultiview) {
+        if (frame && this._depthOcclusion) {
             const refSpace = this.renderer.xr.getReferenceSpace();
             if (refSpace) {
                 this._depthOcclusion.update(frame, refSpace);

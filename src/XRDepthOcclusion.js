@@ -67,6 +67,14 @@ export class XRDepthOcclusion {
         this._locFloorY    = null;
         this._floorViewProj = new Float32Array(16); // reused each frame
         this._readyFloor   = false;
+        // Multiview pre-pass (one draw writes both eye layers via
+        // gl_ViewID_OVR). Compiled lazily when three.js renders with a
+        // WebGLMultiviewRenderTarget (?multiview=1).
+        this._programMV = null;
+        this._vaoMV = null;
+        this._mvLoc = null;
+        this._readyMV = false;
+        this._mvGpuWarned = false;
         this._tmpMat4 = new Matrix4();
         // 1×1 placeholder so uDepthTex is never null (avoids "no texture on unit 0" warning).
         const placeholder = new DataTexture(new Float32Array([0]), 1, 1, RedFormat, FloatType);
@@ -92,6 +100,7 @@ export class XRDepthOcclusion {
             useShaderOcclusion: null,
             enablePrePass: null,
             cpuTexMode: null,
+            mv: false,
             eye0: null,
             eye1: null,
         };
@@ -579,12 +588,14 @@ export class XRDepthOcclusion {
         this._debug.prePassRan = false;
         this._debug.prePassDraws = 0;
         this._debug.prePassUsedFallbackFramebuffer = false;
+        const gl = this.renderer.getContext();
+        const mv = this.renderer.xr.isMultiview === true;
+        this._debug.mv = mv;
+        if (mv) return this._renderPrePassMultiview(gl);
         if (!this._ready) {
-            const glInit = this.renderer.getContext();
-            if (!this._init(glInit)) return false;
+            if (!this._init(gl)) return false;
         }
         if (this._viewData.length === 0) return false;
-        const gl = this.renderer.getContext();
 
         // ── Save GL state ───────────────────────────────────────────────
         const prevProg     = gl.getParameter(gl.CURRENT_PROGRAM);
@@ -701,6 +712,103 @@ export class XRDepthOcclusion {
         gl.colorMask(prevColorMsk[0], prevColorMsk[1], prevColorMsk[2], prevColorMsk[3]);
         if (prevBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
         this._debug.prePassRan = this._debug.prePassDraws > 0;
+        return true;
+    }
+
+    /**
+     * Multiview pre-pass: one fullscreen triangle writes both eye layers of
+     * the multiview XR framebuffer in a single draw — the shader selects
+     * per-eye depth textures and matrices via gl_ViewID_OVR. Draws into the
+     * currently bound framebuffer: at scene.onBeforeRender time that is
+     * Three's XR render target, bound by WebXRManager.onAnimationFrame.
+     * The viewport is whatever Three set for the XR target (full layer).
+     */
+    _renderPrePassMultiview(gl) {
+        if (this._viewData.length < 2) return false;
+        const a = this._viewData[0];
+        const b = this._viewData[1];
+        if (a.mode !== 'cpu' || b.mode !== 'cpu') {
+            // GPU runtime depth + multiview would need the texture array
+            // indexed by gl_ViewID_OVR — not implemented; skip the pre-pass
+            // entirely rather than write depth to one eye only.
+            if (!this._mvGpuWarned) {
+                this._mvGpuWarned = true;
+                console.warn('[XRDepthOcclusion] multiview + GPU runtime depth not supported — pre-pass skipped');
+            }
+            return false;
+        }
+        if (!this._readyMV && !this._initMV(gl)) return false;
+
+        // ── Save GL state (as the per-eye path, plus TEXTURE1) ──────────
+        const prevProg     = gl.getParameter(gl.CURRENT_PROGRAM);
+        const prevUnit     = gl.getParameter(gl.ACTIVE_TEXTURE);
+        gl.activeTexture(gl.TEXTURE0);
+        const prevTex0     = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.activeTexture(gl.TEXTURE1);
+        const prevTex1     = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.activeTexture(prevUnit);
+        const prevDepthTst = gl.isEnabled(gl.DEPTH_TEST);
+        const prevDepthFn  = gl.getParameter(gl.DEPTH_FUNC);
+        const prevDepthClr = gl.getParameter(gl.DEPTH_CLEAR_VALUE);
+        const prevDepthMsk = gl.getParameter(gl.DEPTH_WRITEMASK);
+        const prevColorMsk = gl.getParameter(gl.COLOR_WRITEMASK);
+        const prevBlend    = gl.isEnabled(gl.BLEND);
+
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.ALWAYS);
+        gl.depthMask(true);
+        gl.colorMask(false, false, false, false);
+        gl.disable(gl.BLEND);
+
+        // A multiview clear covers every layer of the depth attachment, so
+        // one clear resets both eyes.
+        gl.clearDepth(1.0);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+
+        gl.useProgram(this._programMV);
+        gl.bindVertexArray(this._vaoMV);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, a.tex);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, b.tex);
+        gl.uniform1i(this._mvLoc.tex0, 0);
+        gl.uniform1i(this._mvLoc.tex1, 1);
+        if (this._mvLoc.raw0 !== null) {
+            gl.uniform1f(this._mvLoc.raw0, a.rawValueToMeters != null ? a.rawValueToMeters : 1.0);
+            gl.uniform1f(this._mvLoc.raw1, b.rawValueToMeters != null ? b.rawValueToMeters : 1.0);
+        }
+        gl.uniformMatrix4fv(this._mvLoc.uvXform0, false, a.uvTransform);
+        gl.uniformMatrix4fv(this._mvLoc.uvXform1, false, b.uvTransform);
+        gl.uniformMatrix4fv(this._mvLoc.proj0, false, a.projMatrix);
+        gl.uniformMatrix4fv(this._mvLoc.proj1, false, b.projMatrix);
+        gl.uniformMatrix4fv(this._mvLoc.projInv0, false, a.projInvMatrix);
+        gl.uniformMatrix4fv(this._mvLoc.projInv1, false, b.projInvMatrix);
+        gl.uniformMatrix4fv(this._mvLoc.viewInv0, false, a.viewInvMatrix);
+        gl.uniformMatrix4fv(this._mvLoc.viewInv1, false, b.viewInvMatrix);
+        gl.uniform1f(this._mvLoc.floorY, this._floorClearY !== null ? this._floorClearY : 0.0);
+        gl.uniform1f(this._mvLoc.useFloorClear, this._floorClearY !== null ? 1.0 : 0.0);
+        const clearBoxUniforms = this._buildClearBoxUniformData();
+        gl.uniform1i(this._mvLoc.clearBoxCount, clearBoxUniforms.count);
+        gl.uniform3fv(this._mvLoc.clearBoxMin, clearBoxUniforms.mins);
+        gl.uniform3fv(this._mvLoc.clearBoxMax, clearBoxUniforms.maxs);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        this._debug.prePassDraws++;
+
+        // ── Restore GL state ────────────────────────────────────────────
+        gl.bindVertexArray(null);
+        gl.useProgram(prevProg);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, prevTex0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, prevTex1);
+        gl.activeTexture(prevUnit);
+        if (prevDepthTst) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+        gl.depthFunc(prevDepthFn);
+        gl.clearDepth(prevDepthClr);
+        gl.depthMask(prevDepthMsk);
+        gl.colorMask(prevColorMsk[0], prevColorMsk[1], prevColorMsk[2], prevColorMsk[3]);
+        if (prevBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
+        this._debug.prePassRan = true;
         return true;
     }
 
@@ -959,6 +1067,145 @@ export class XRDepthOcclusion {
         this.renderer.resetState();
         this._ready = true;
         console.log('[XRDepthOcclusion] initialized — depth pre-pass active');
+        return true;
+    }
+
+    /**
+     * Compiles the multiview pre-pass program (one draw, both eye layers via
+     * gl_ViewID_OVR). Mirrors _init but with per-eye uniform pairs; sampler
+     * arrays can't be indexed by gl_ViewID_OVR in GLSL ES 3.00, hence the
+     * eye0/eye1 uniform pairs instead of arrays. On failure the pre-pass
+     * stays off — a non-multiview draw into a multiview framebuffer would
+     * write only the first eye layer, giving broken one-eye occlusion.
+     */
+    _initMV(gl) {
+        const u16 = this._ensureCpuTexMode(gl) === 'u16';
+        const vs = `#version 300 es
+            #extension GL_OVR_multiview : require
+            layout(num_views = 2) in;
+            uniform mat4 uUvXform0;
+            uniform mat4 uUvXform1;
+            out vec2 vUv;
+            out vec2 vViewUv;
+            void main() {
+                vec2 pos;
+                if      (gl_VertexID == 0) pos = vec2(-1., -1.);
+                else if (gl_VertexID == 1) pos = vec2( 3., -1.);
+                else                       pos = vec2(-1.,  3.);
+                vec2 rawUv = 0.5 * (pos + 1.0);
+                vViewUv = rawUv;
+                mat4 xform = gl_ViewID_OVR == 0 ? uUvXform0 : uUvXform1;
+                vUv = (xform * vec4(rawUv, 0., 1.)).xy;
+                gl_Position = vec4(pos, 0., 1.);
+            }`;
+
+        const fs = `#version 300 es
+            #extension GL_OVR_multiview : require
+            precision highp float;
+            ${u16
+                ? 'uniform highp usampler2D uTex0;\n            uniform highp usampler2D uTex1;\n            uniform float uRawToMeters0;\n            uniform float uRawToMeters1;'
+                : 'uniform sampler2D uTex0;\n            uniform sampler2D uTex1;'}
+            uniform mat4 uProj0;
+            uniform mat4 uProj1;
+            uniform mat4 uProjInv0;
+            uniform mat4 uProjInv1;
+            uniform mat4 uViewInv0;
+            uniform mat4 uViewInv1;
+            uniform float uFloorClearY;
+            uniform float uUseFloorClear;
+            uniform int uClearBoxCount;
+            uniform vec3 uClearBoxMin[8];
+            uniform vec3 uClearBoxMax[8];
+            in vec2 vUv;
+            in vec2 vViewUv;
+            out vec4 fragColor;
+            void main() {
+                bool eye0 = gl_ViewID_OVR == 0;
+                ${u16
+                    ? 'float metres = eye0\n                        ? float(texture(uTex0, vUv).r) * uRawToMeters0\n                        : float(texture(uTex1, vUv).r) * uRawToMeters1;'
+                    : 'float metres = eye0\n                        ? texture(uTex0, vUv).r\n                        : texture(uTex1, vUv).r;'}
+                if (metres < 0.05) discard;
+                mat4 projInv = eye0 ? uProjInv0 : uProjInv1;
+                mat4 viewInv = eye0 ? uViewInv0 : uViewInv1;
+                if (uUseFloorClear > 0.5 || uClearBoxCount > 0) {
+                    vec2 ndc = vViewUv * 2.0 - 1.0;
+                    vec4 viewFar4 = projInv * vec4(ndc, 1.0, 1.0);
+                    vec3 rayDir = normalize(viewFar4.xyz / max(1e-6, viewFar4.w));
+                    float denom = max(1e-4, -rayDir.z);
+                    vec3 viewPos = rayDir * (metres / denom);
+                    vec3 worldPos = (viewInv * vec4(viewPos, 1.0)).xyz;
+                    if (worldPos.y < uFloorClearY) discard;
+                    for (int i = 0; i < 8; i++) {
+                        if (i >= uClearBoxCount) break;
+                        vec3 boxMin = uClearBoxMin[i];
+                        vec3 boxMax = uClearBoxMax[i];
+                        bool insideBox =
+                            worldPos.x >= boxMin.x && worldPos.x <= boxMax.x &&
+                            worldPos.y >= boxMin.y && worldPos.y <= boxMax.y &&
+                            worldPos.z >= boxMin.z && worldPos.z <= boxMax.z;
+                        if (insideBox) discard;
+                    }
+                }
+                float zEye = -metres;
+                mat4 proj = eye0 ? uProj0 : uProj1;
+                vec4 clip = proj * vec4(0.0, 0.0, zEye, 1.0);
+                gl_FragDepth = clamp((clip.z / clip.w) * 0.5 + 0.5, 0.0, 1.0);
+                fragColor = vec4(0.0);
+            }`;
+
+        const compile = (type, src) => {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, src);
+            gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                const e = gl.getShaderInfoLog(s);
+                gl.deleteShader(s);
+                throw new Error(e);
+            }
+            return s;
+        };
+
+        try {
+            const v = compile(gl.VERTEX_SHADER, vs);
+            const f = compile(gl.FRAGMENT_SHADER, fs);
+            this._programMV = gl.createProgram();
+            gl.attachShader(this._programMV, v);
+            gl.attachShader(this._programMV, f);
+            gl.linkProgram(this._programMV);
+            gl.deleteShader(v);
+            gl.deleteShader(f);
+            if (!gl.getProgramParameter(this._programMV, gl.LINK_STATUS))
+                throw new Error(gl.getProgramInfoLog(this._programMV));
+        } catch (e) {
+            console.warn('[XRDepthOcclusion] multiview pre-pass shader error:', e);
+            return false;
+        }
+
+        const p = this._programMV;
+        this._mvLoc = {
+            tex0: gl.getUniformLocation(p, 'uTex0'),
+            tex1: gl.getUniformLocation(p, 'uTex1'),
+            raw0: u16 ? gl.getUniformLocation(p, 'uRawToMeters0') : null,
+            raw1: u16 ? gl.getUniformLocation(p, 'uRawToMeters1') : null,
+            uvXform0: gl.getUniformLocation(p, 'uUvXform0'),
+            uvXform1: gl.getUniformLocation(p, 'uUvXform1'),
+            proj0: gl.getUniformLocation(p, 'uProj0'),
+            proj1: gl.getUniformLocation(p, 'uProj1'),
+            projInv0: gl.getUniformLocation(p, 'uProjInv0'),
+            projInv1: gl.getUniformLocation(p, 'uProjInv1'),
+            viewInv0: gl.getUniformLocation(p, 'uViewInv0'),
+            viewInv1: gl.getUniformLocation(p, 'uViewInv1'),
+            floorY: gl.getUniformLocation(p, 'uFloorClearY'),
+            useFloorClear: gl.getUniformLocation(p, 'uUseFloorClear'),
+            clearBoxCount: gl.getUniformLocation(p, 'uClearBoxCount'),
+            clearBoxMin: gl.getUniformLocation(p, 'uClearBoxMin[0]'),
+            clearBoxMax: gl.getUniformLocation(p, 'uClearBoxMax[0]'),
+        };
+
+        this._vaoMV = gl.createVertexArray();
+        this.renderer.resetState();
+        this._readyMV = true;
+        console.log('[XRDepthOcclusion] multiview depth pre-pass active');
         return true;
     }
 
