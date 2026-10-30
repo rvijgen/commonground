@@ -262,10 +262,12 @@ export class XRDepthOcclusion {
         this._debug.layerType = layer ? layer.constructor?.name || 'XRLayer' : null;
 
         if (frame.session.depthUsage && frame.session.depthUsage !== 'cpu-optimized') {
-            this._debug.reason = 'cpu-not-granted-runtime-using-gpu';
+            // Informational only: the CPU path is still tried first every
+            // frame — Meta's runtime may report gpu-optimized yet serve CPU
+            // depth data regardless.
             if (!this._cpuUnavailableWarned) {
                 this._cpuUnavailableWarned = true;
-                console.log('[XRDepthOcclusion] Runtime granted', frame.session.depthUsage, '- using GPU depth fallback.');
+                console.log('[XRDepthOcclusion] Session depthUsage:', frame.session.depthUsage, '(CPU depth is still tried first)');
             }
         }
 
