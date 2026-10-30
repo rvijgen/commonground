@@ -58,6 +58,12 @@ export class CommonGround {
         this.renderer = null;
         this.controls = null;
 
+        // Multiview stereo rendering (OCULUS_multiview): one draw stream for
+        // both eyes. On by default — the depth pre-pass is multiview-aware,
+        // and three.js falls back automatically when the extension is absent.
+        // ?multiview=0 in the URL force-disables for debugging.
+        this._multiviewEnabled = true;
+
         // XR quality — set before calling init()
         // foveation: 0 = sharp everywhere, 1 = max foveation (Quest default)
         // framebufferScale: 1.0 = native res, 1.5 = supersampled, 0.5 = half res
@@ -186,7 +192,7 @@ export class CommonGround {
      * Configure initial visibility before calling init().
      * Call this before init() to avoid a visible flash.
      */
-    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, desktopFigure, fpsCounter, background } = {}) {
+    configure({ roomMesh, helpers, menu, occlusion, occlusionMode, overlay, occlusionRangeMeters, multiview, apiBase, anchorsEndpoint, meshEndpoint, deviceId, socketPath, clientRole, desktopHud, desktopFigure, fpsCounter, background } = {}) {
         if (roomMesh !== undefined) this._initialConfig.roomMesh = roomMesh;
         if (helpers !== undefined) {
             this._initialConfig.helpers = helpers;
@@ -199,6 +205,7 @@ export class CommonGround {
         if (occlusionMode !== undefined) this._occlusionMode = occlusionMode;
         if (overlay !== undefined) this._overlayEnabled = !!overlay;
         if (Number.isFinite(occlusionRangeMeters)) this._occlusionRangeMeters = occlusionRangeMeters;
+        if (multiview !== undefined) this._multiviewEnabled = !!multiview;
         if (deviceId !== undefined) this._deviceId = deviceId;
         if (typeof socketPath === 'string' && socketPath.trim()) this._socketPath = socketPath.trim();
         if (clientRole !== undefined) this._clientRole = clientRole;
@@ -686,18 +693,20 @@ export class CommonGround {
     }
 
     _setupRenderer() {
-        // ?multiview=1 enables three.js multiview stereo rendering (one draw
-        // stream for both eyes via OCULUS_multiview). The depth pre-pass is
-        // multiview-aware: XRDepthOcclusion switches to a num_views=2 program
-        // that writes both eye layers in one draw.
-        this._forceMultiview = typeof window !== 'undefined'
-            && new URLSearchParams(window.location.search).get('multiview') === '1';
+        // Multiview is on by default (configure({ multiview: false }) opts
+        // out). The URL flag overrides either way for debugging: ?multiview=0
+        // forces it off, ?multiview=1 forces it on.
+        const multiviewParam = typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('multiview') : null;
+        const multiview = multiviewParam === '0' ? false
+            : multiviewParam === '1' ? true
+            : this._multiviewEnabled;
         this.renderer = new WebGLRenderer({
             alpha: true,
             antialias: true,
             // Prefer the discrete/high-clock GPU path on mobile runtimes.
             powerPreference: 'high-performance',
-            multiviewStereo: this._forceMultiview,
+            multiviewStereo: multiview,
         });
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);

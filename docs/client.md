@@ -54,6 +54,12 @@ occlusion: true, occlusionMode: 'prepass', background: '#334155' })`
 (`background` is the desktop clear color, `#334155` by default; XR always
 clears transparent for passthrough).
 
+Multiview stereo rendering (one draw stream for both eyes via
+`OCULUS_multiview`) is on by default; the depth pre-pass is
+multiview-aware, and runtimes without the extension fall back
+automatically. `configure({ multiview: false })` opts out; the URL flag
+`?multiview=0` / `?multiview=1` overrides config for debugging.
+
 ## Cross-headset channels (`cg.sync` / `cg.status` / `cg.stream`)
 
 Every `CommonGround` instance carries three socket channels. The socket.io
