@@ -314,10 +314,16 @@ export class XRDepthOcclusion {
                     continue;
                 }
 
-                if (!this._readyGPU && !this._initGPU(gl)) continue;
+                if (!this._readyGPU && !this._initGPU(gl)) {
+                    this._debug.reason = `view${i}-gpu-init-failed`;
+                    continue;
+                }
 
                 const vp = this._getViewportForView(layer, xrBinding || this._binding, view);
-                if (!vp) continue;
+                if (!vp) {
+                    this._debug.reason = `view${i}-gpu-no-viewport`;
+                    continue;
+                }
                 const subImage = this._getViewSubImage(layer, xrBinding || this._binding, view);
                 const texLayer = (subImage && Number.isFinite(subImage.imageIndex))
                     ? subImage.imageIndex : 0;
@@ -383,7 +389,10 @@ export class XRDepthOcclusion {
             gl.bindTexture(gl.TEXTURE_2D, null);
 
             const vp = this._getViewportForView(layer, xrBinding || this._binding, view);
-            if (!vp) continue;
+            if (!vp) {
+                this._debug.reason = `view${i}-cpu-no-viewport`;
+                continue;
+            }
             let fb = this._xrFramebuffer;
             if (!fb) {
                 const subImage = this._getViewSubImage(layer, xrBinding || this._binding, view);
@@ -400,7 +409,9 @@ export class XRDepthOcclusion {
 
         this._debug.views = this._viewData.length;
         this._debug.mode = this._viewData.length > 0 ? this._viewData[0].mode : 'none';
-        this._debug.reason = this._viewData.length > 0 ? 'ok' : 'no-depth-info';
+        // Keep the specific per-view/early-exit reason when no view produced
+        // data — overwriting it with a generic one hides the failure point.
+        if (this._viewData.length > 0) this._debug.reason = 'ok';
 
         // Restore TEXTURE_2D_ARRAY so Three.js cache stays valid.
         gl.bindTexture(gl.TEXTURE_2D_ARRAY, _savedTexArr);
