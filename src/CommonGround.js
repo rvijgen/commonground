@@ -753,7 +753,6 @@ export class CommonGround {
 
         ARButton.convertToARButton(arButton, this.renderer, {
             requiredFeatures: [
-                'anchors',
                 'plane-detection',
                 'mesh-detection',
                 'local-floor',
@@ -918,7 +917,6 @@ export class CommonGround {
                 this.roomMeshVisible = this.meshFunctions.toggleRoomMeshVisibility(visible, this.ratk, this.scene, this.isDesktopMode);
                 this._syncRoomMeshPresentation(this.roomMeshVisible);
             },
-            (ratk) => VRControlPanel.clearPersistentAnchorData(ratk, this._anchorsEndpoint, this._deviceId),
             this.renderer,
             this.sceneManager,
             this.isDesktopMode,
@@ -1389,8 +1387,6 @@ export class CommonGround {
         } catch (error) {
             console.error('Failed to fetch anchor references from server:', error);
             return {
-                scene_anchor: null,
-                control_panel_anchor: null,
                 scene_anchor_transform: null,
                 control_panel_anchor_transform: null,
             };
@@ -1693,21 +1689,8 @@ export class CommonGround {
         }
 
         if (this.controllerManager) {
-            this.controllerManager.handlePendingAnchors(this._buildAnchorMarker.bind(this));
             this.controllerManager.update();
         }
-    }
-
-    _buildAnchorMarker(anchor, isRecovered) {
-        const geometry = new BoxGeometry(0.05, 0.05, 0.05);
-        const material = new MeshBasicMaterial({
-            color: isRecovered ? 0xff0000 : 0x00ff00,
-        });
-        const cube = new Mesh(geometry, material);
-        anchor.add(cube);
-        console.log(
-            `anchor created (id: ${anchor.anchorID}, isPersistent: ${anchor.isPersistent}, isRecovered: ${isRecovered})`,
-        );
     }
 
     _updateSemanticLabels() {

@@ -267,9 +267,9 @@ export async function createServer(options = {}) {
 		try {
 			const anchors = await store.saveAnchors(req.body || {}, req.query.device);
 			if (req.query.device != null && req.query.device !== '') {
-				logInfo(`Anchor references saved to anchors.json for device ${req.query.device} (space: ${store.spaceId})`);
+				logInfo(`Anchor transforms saved to anchors.json for device ${req.query.device} (space: ${store.spaceId})`);
 			} else {
-				logInfo(`Anchor references saved to anchors.json (space: ${store.spaceId})`);
+				logInfo(`Anchor transforms saved to anchors.json (space: ${store.spaceId})`);
 			}
 			res.json({ success: true, anchors });
 		} catch (error) {

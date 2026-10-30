@@ -16,47 +16,6 @@ import { Text } from 'troika-three-text';
  * Base VR Control Panel class for creating interactive UI elements in VR space
  */
 export class VRControlPanel {
-    static async clearPersistentAnchorData(ratk, anchorsEndpoint = '/api/anchors', deviceId = null) {
-        try {
-            console.log('Attempting to clear persistent anchor data...');
-            const currentAnchors = Array.from(ratk.anchors);
-            const deletionPromises = currentAnchors.map(async (anchor) => {
-                try {
-                    console.log('Deleting current anchor:', anchor.anchorID);
-                    await ratk.deleteAnchor(anchor);
-                    console.log('Successfully deleted anchor:', anchor.anchorID);
-                } catch (error) {
-                    console.error('Failed to delete anchor:', anchor.anchorID, error);
-                }
-            });
-            await Promise.all(deletionPromises);
-            console.log('All current anchors deleted from XR session');
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            try {
-                const endpoint = anchorsEndpoint || '/api/anchors';
-                const url = deviceId != null ? `${endpoint}?device=${encodeURIComponent(deviceId)}` : endpoint;
-                await fetch(url, { method: 'DELETE' });
-                console.log('Cleared server anchor references');
-            } catch (error) {
-                console.error('Failed to clear server anchor references:', error);
-            }
-            try {
-                const databases = await indexedDB.databases();
-                for (const db of databases) {
-                    if (db.name && (db.name.includes('ratk') || db.name.includes('anchor') || db.name.includes('xr'))) {
-                        console.log('Deleting IndexedDB:', db.name);
-                        indexedDB.deleteDatabase(db.name);
-                    }
-                }
-            } catch (error) {
-                console.log('IndexedDB cleanup not available or failed:', error);
-            }
-            console.log('Persistent anchor data clearing completed');
-        } catch (error) {
-            console.error('Failed to clear persistent anchor data:', error);
-        }
-    }
-
     constructor(options = {}) {
         this.panel = new Group();
         this.controls = [];
@@ -92,7 +51,7 @@ export class VRControlPanel {
     /**
      * Static factory method to create and configure a VR Control Panel
      */
-    static createControlPanel(scene, ratk, controllerManager, toggleRoomMeshVisibility, clearPersistentAnchorData, renderer, sceneManager, isDesktopMode = null) {
+    static createControlPanel(scene, ratk, controllerManager, toggleRoomMeshVisibility, renderer, sceneManager, isDesktopMode = null) {
         // Use provided mode or fallback to simple detection
         let isDesktop;
         if (isDesktopMode !== null) {
@@ -121,8 +80,6 @@ export class VRControlPanel {
         // Store callbacks for desktop use
         vrControlPanel.callbacks = {
             toggleRoomMeshVisibility,
-            clearPersistentAnchorData,
-            clearAllAnchors: () => controllerManager?.clearAllAnchors(),
             saveAnchorsToServer: () => controllerManager?.saveSceneAndPanelAnchors(),
             toggleHelpers: (visible) => {
                 if (sceneManager) {
@@ -199,21 +156,6 @@ export class VRControlPanel {
                     console.log('Room mesh export not available');
                     return Promise.resolve({ error: 'Export function not available' });
                 }
-            },
-            debugAnchors: () => {
-                console.log('=== ANCHOR DEBUG INFO ===');
-                console.log(`Total anchors: ${ratk.anchors.size}`);
-                ratk.anchors.forEach((anchor, index) => {
-                    const hasVisual = anchor.children.some(child =>
-                        child.geometry && child.geometry.type === 'BoxGeometry'
-                    );
-                    console.log(`Anchor ${index + 1}:`, {
-                        id: anchor.anchorID,
-                        isPersistent: anchor.isPersistent,
-                        hasVisualMarker: hasVisual,
-                        childrenCount: anchor.children.length
-                    });
-                });
             },
             debugScene: () => {
                 if (sceneManager) {
@@ -790,12 +732,6 @@ export class VRControlPanel {
             this.callbacks.debugScene();
         });
         this.desktopOverlay.appendChild(debugSceneBtn);
-
-        // Debug Anchors Button
-        const debugBtn = this.createDesktopButton('Debug Anchors', () => {
-            this.callbacks.debugAnchors();
-        });
-        this.desktopOverlay.appendChild(debugBtn);
 
         // Export Room Mesh Button (only show in VR mode)
         if (!this.isDesktopMode) {

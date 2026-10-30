@@ -2,8 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const EMPTY_ANCHORS = {
-	scene_anchor: null,
-	control_panel_anchor: null,
 	scene_anchor_transform: null,
 	control_panel_anchor_transform: null,
 };
@@ -22,13 +20,13 @@ export function parseDeviceId(value) {
 
 /**
  * Anchor status of one headset from its device-scoped anchors view: anchored
- * when the scoped view has a scene_anchor, or — for headsets that only ever
- * placed the scene as a whole — a centroid_transform. Mirrors the client-side
- * predicate in src/DesktopHud.js (string form differs: 'no-anchor' here).
+ * when the scoped view has a centroid_transform (the saved reference frame
+ * every placement is expressed in). Mirrors the client-side predicate in
+ * src/DesktopHud.js (string form differs: 'no-anchor' here).
  */
 export function anchorStatusFromScopedView(view) {
 	if (!view || typeof view !== 'object') return 'unknown';
-	if (view.scene_anchor != null || view.centroid_transform != null) return 'anchored';
+	if (view.centroid_transform != null) return 'anchored';
 	return 'no-anchor';
 }
 
@@ -47,8 +45,6 @@ function pickAnchorValue(source, deviceId, id) {
 
 function scopedAnchorView(source, deviceId) {
 	return {
-		scene_anchor: pickAnchorValue(source, deviceId, 'scene_anchor'),
-		control_panel_anchor: pickAnchorValue(source, deviceId, 'control_panel_anchor'),
 		scene_anchor_transform: pickAnchorValue(source, deviceId, 'scene_anchor_transform'),
 		control_panel_anchor_transform: pickAnchorValue(source, deviceId, 'control_panel_anchor_transform'),
 		centroid_transform: pickAnchorValue(source, deviceId, 'centroid_transform'),
@@ -70,7 +66,7 @@ function applyScopedAnchorPatch(target, incoming, deviceId) {
 }
 
 /**
- * File-backed per-space persistence for anchor references and room meshes.
+ * File-backed per-space persistence for placement transforms and room meshes.
  * Data lives at <dataDir>/spaces/<spaceId>/{anchors.json,mesh.json}.
  */
 export class AnchorStore {

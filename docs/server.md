@@ -21,7 +21,7 @@ HTTP runs on port 3001 and HTTPS (self-signed dev certificate in `server/.certs`
 
 All endpoints are mounted at `/`, `/commonground/`, and any caller-provided aliases:
 
-- `GET/POST/DELETE /api/anchors` (legacy alias `/anchors`) — persistent anchor references; `?device=N` scopes keys as `device_<id>_<key>`
+- `GET/POST/DELETE /api/anchors` (legacy alias `/anchors`) — per-space placement transforms (`*_transform` keys, centroid-relative scene/panel/centroid poses); `?device=N` scopes keys as `device_<id>_<key>`
 - `GET/POST /api/mesh` (legacy alias `/mesh`) — room mesh export
 - `POST /api/roommesh`, `GET /api/roommesh[/:sessionId]` — legacy per-session room meshes
 - `GET /api/client-config` — client runtime config (`{ syncDefault, helperUrl, headsets: [{ id, label, color? }] }`);

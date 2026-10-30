@@ -7,7 +7,7 @@ Commonground is a multi-user **mixed-reality (passthrough)** WebXR framework for
 
 ## What it does
 
-- **Shared spacial Anchorings** — Set a spatial anchor once for each headset. Supports multiple spaces. 
+- **Shared spatial anchorings** — Set a spatial anchor once for each headset. Supports multiple spaces. 
 - **One server for everything** — `commonground serve` hosts your app's files, the anchor/mesh API, the socket relay, session logs and the dashboard in a single process. No app-specific server code needed.
 - **Cross-headset channels** — `cg.sync` (generic events relayed to every other headset), `cg.status` (per-device status merge store feeding dashboards and logs), and `cg.stream` (live headset poses at ~10 Hz).
 - **Desktop spectator view** — any browser shows the room mesh and placed content, with a HUD offering Headsets (presence, session time, status, anchor state), Spaces (select/create) and Session (sync/stream toggles, session log) tabs. While streaming, each immersed headset appears as a human (color coded) figure at its real position.

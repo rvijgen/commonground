@@ -1,18 +1,3 @@
-/**
- * Derives the anchor status of one headset from the device-scoped
- * GET api/anchors?device=N payload. A headset counts as anchored when its
- * scoped view has a scene_anchor, or — for headsets that only ever placed
- * the scene as a whole — a centroid_transform.
- *
- * Kept for API compatibility; the HUD itself now reads the server-computed
- * anchor state from GET api/headsets.
- */
-export function anchorStatusFromScopedView(view) {
-	if (!view || typeof view !== 'object') return 'unknown';
-	if (view.scene_anchor != null || view.centroid_transform != null) return 'anchored';
-	return 'no anchor';
-}
-
 const HUD_FONT = '12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
 const TAB_IDS = ['headsets', 'spaces', 'session'];
 const TAB_LABELS = { headsets: 'Headsets', spaces: 'Spaces', session: 'Session' };

@@ -55,21 +55,11 @@ export class ControllerManager {
         this.leftMenuButtonWasPressed = false;
         this.rightMenuButtonWasPressed = false;
         this.rightOverlayButtonWasPressed = false;
-        this.pendingAnchorQueue = [];
-        this.pendingAnchorCreateInFlight = false;
         this.centerCube = null;
-        
+
         // Create raycaster for scene object detection
         this.raycaster = new Raycaster();
 
-    // Anchor dragging state
-    this.anchorIsGrabbed = false;
-    this.anchorGrabController = null;
-    this.anchorGrabbed = null;
-    this.anchorGrabOffset = new Vector3();
-    this.anchorInitialControllerMatrix = null;
-    this.anchorInitialAnchorMatrix = null;
-    this.anchorHover = null;
     this.isPointingAtPanel = null;
     this._beamDefaultLength = 1.0;
         this._leftBeamLength = this._beamDefaultLength;
@@ -78,21 +68,10 @@ export class ControllerManager {
         this.setupControllers();
     }
 
-    _anchorKey(id) {
-        return this.deviceId != null ? `device_${this.deviceId}_${id}` : id;
-    }
-
     _anchorsRequestUrl() {
         if (this.deviceId == null) return this.anchorsEndpoint;
         const separator = this.anchorsEndpoint.includes('?') ? '&' : '?';
         return `${this.anchorsEndpoint}${separator}device=${encodeURIComponent(this.deviceId)}`;
-    }
-
-    _anchorValue(anchorRefs, id) {
-        if (!anchorRefs || typeof anchorRefs !== 'object') return null;
-        const namespaced = anchorRefs[this._anchorKey(id)];
-        if (namespaced !== undefined) return namespaced;
-        return anchorRefs[id] ?? null;
     }
 
     /**
@@ -420,27 +399,6 @@ export class ControllerManager {
         this.rightOverlayButtonWasPressed = pressedNow;
     }
 
-    /**
-     * Handles the creation of anchors based on pending data.
-     */
-    async getAnchorReferencesFromServer() {
-        try {
-            const response = await fetch(this._anchorsRequestUrl());
-            if (!response.ok) {
-                throw new Error(`Anchor fetch failed: ${response.status}`);
-            }
-            return await response.json();
-        } catch (error) {
-            console.error('Failed to fetch anchor references from server:', error);
-            return {
-                scene_anchor: null,
-                control_panel_anchor: null,
-                scene_anchor_transform: null,
-                control_panel_anchor_transform: null,
-            };
-        }
-    }
-
     async saveAnchorTransformToServer(id, position, quaternion) {
         try {
             const transformKey = `${id}_transform`;
@@ -467,105 +425,6 @@ export class ControllerManager {
             console.error('Failed to save anchor transform to server:', error);
             throw error;
         }
-    }
-
-    async saveAnchorReferenceToServer(id, anchorID) {
-        try {
-            const payload = { [id]: anchorID };
-            const response = await fetch(this._anchorsRequestUrl(), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                throw new Error(`Anchor save failed: ${response.status}`);
-            }
-        } catch (error) {
-            console.error('Failed to save anchor reference to server:', error);
-            throw error;
-        }
-    }
-
-    async removePreviousAnchorValue(id) {
-        const allAnchors = Array.from(this.ratk.anchors);
-        const anchorRefs = await this.getAnchorReferencesFromServer();
-        const anchorUUID = this._anchorValue(anchorRefs, id);
-
-        if (!anchorUUID) {
-            return;
-        }
-
-        for (const anchor of allAnchors) {
-            if (anchor.anchorID === anchorUUID) {
-                await this.ratk.deleteAnchor(anchor);
-                break;
-            }
-        }
-    }
-
-    async createOrReplacePersistentAnchor(anchorData, buildAnchorMarker = null) {
-        // createAnchor must be started synchronously (before any await) so that
-        // createAnchorFromTransform captures xrManager.getFrame() while the XR
-        // frame is still active. Awaiting anything first lets Three.js clear
-        // xrFrame = null before we reach this call.
-        const anchorPromise = this.ratk.createAnchor(
-            anchorData.position,
-            anchorData.quaternion,
-            true,
-        );
-
-        // Deletion and other async work can safely happen after frame capture.
-        if (anchorData.id) {
-            await this.removePreviousAnchorValue(anchorData.id);
-        }
-
-        const anchor = await anchorPromise;
-
-        if (anchorData.id) {
-            await this.saveAnchorReferenceToServer(anchorData.id, anchor.anchorID);
-        } else if (buildAnchorMarker) {
-            buildAnchorMarker(anchor, false);
-        }
-
-        return anchor;
-    }
-
-    handlePendingAnchors(buildAnchorMarker) {
-        if (this.pendingAnchorCreateInFlight || this.pendingAnchorQueue.length === 0) {
-            return;
-        }
-
-        const anchorData = this.pendingAnchorQueue.shift();
-        this.pendingAnchorCreateInFlight = true;
-
-        (async () => {
-            try {
-                console.log('Handling pending anchor data:', anchorData);
-
-                console.log(`Creating anchor. Current count: ${this.ratk.anchors.size}`);
-                console.log('Pending anchor data:', anchorData);
-
-                const anchor = await this.createOrReplacePersistentAnchor(anchorData, buildAnchorMarker);
-
-                console.log('Anchor created:', anchor);
-                console.log(`Anchor created successfully. New count: ${this.ratk.anchors.size}`);
-            } catch (error) {
-                console.error('Failed to create anchor:', error);
-
-                if (error.message.includes('Maximum number of anchors reached')) {
-                    console.error('Anchor limit reached. Try these steps:');
-                    console.error('1. Use "Clear Anchors" to remove current anchors');
-                    console.error('2. Use "Clear Persistent Data" to remove stored data');
-                    console.error('3. Restart the XR session');
-                    console.error(`Current visible anchors: ${this.ratk.anchors.size}`);
-                }
-            } finally {
-                this.pendingAnchorCreateInFlight = false;
-            }
-        })();
     }
 
     /**
@@ -684,66 +543,5 @@ export class ControllerManager {
         if (this.vrControlPanel) {
             this.vrControlPanel.updateGrab();
         }
-        // Anchor hover feedback
-        const prevHover = this.anchorHover;
-        this.anchorHover = this.getIntersectedAnchor(this._getRightInteractionController());
-        if (prevHover && prevHover !== this.anchorHover && prevHover.children[0] && prevHover.children[0].material) {
-            // Restore color if no longer hovered or grabbed
-            if (!this.anchorIsGrabbed || prevHover !== this.anchorGrabbed) {
-                prevHover.children[0].material.color.setHex(0x0000ff); // blue default
-            }
-        }
-        if (this.anchorHover && this.anchorHover.children[0] && this.anchorHover.children[0].material) {
-            if (!this.anchorIsGrabbed || this.anchorHover !== this.anchorGrabbed) {
-                this.anchorHover.children[0].material.color.setHex(0xff8800); // orange on hover
-            }
-        }
-        // Update anchor dragging (grab logic similar to panel/scene)
-        if (this.anchorIsGrabbed && this.anchorGrabController && this.anchorGrabbed) {
-            const currentControllerMatrix = this.anchorGrabController.matrixWorld.clone();
-            const deltaMatrix = currentControllerMatrix.clone().multiply(this.anchorInitialControllerMatrix.clone().invert());
-            const newAnchorMatrix = deltaMatrix.clone().multiply(this.anchorInitialAnchorMatrix);
-            // Convert newAnchorMatrix to local space of anchor's parent
-            const parent = this.anchorGrabbed.parent;
-            let prevPos = this.anchorGrabbed.position.clone();
-            if (parent) {
-                const parentInv = parent.matrixWorld.clone().invert();
-                const localMatrix = parentInv.multiply(newAnchorMatrix);
-                this.anchorGrabbed.position.setFromMatrixPosition(localMatrix);
-                this.anchorGrabbed.quaternion.setFromRotationMatrix(localMatrix);
-            } else {
-                this.anchorGrabbed.position.setFromMatrixPosition(newAnchorMatrix);
-                this.anchorGrabbed.quaternion.setFromRotationMatrix(newAnchorMatrix);
-            }
-            // Ensure transform is applied
-            this.anchorGrabbed.updateMatrixWorld(true);
-            // Debug log
-            if (!this.anchorGrabbed.position.equals(prevPos)) {
-                console.log('[Anchor Drag] Anchor', this.anchorGrabbed.anchorID, 'moved to', this.anchorGrabbed.position.toArray(), 'parent:', this.anchorGrabbed.parent ? this.anchorGrabbed.parent.name : 'none');
-            } else {
-                console.log('[Anchor Drag] Anchor', this.anchorGrabbed.anchorID, 'DID NOT MOVE. Position:', this.anchorGrabbed.position.toArray(), 'parent:', this.anchorGrabbed.parent ? this.anchorGrabbed.parent.name : 'none');
-            }
-        }
-    }
-    /**
-     * Returns the anchor intersected by the controller's ray, if any
-     */
-    getIntersectedAnchor(controller) {
-        if (!this.ratk || !this.ratk.anchors || !controller) return null;
-        // Set up raycaster from controller
-        const tempMatrix = controller.matrixWorld;
-        const origin = new Vector3().setFromMatrixPosition(tempMatrix);
-        const direction = new Vector3(0, 0, -1).transformDirection(tempMatrix);
-        this.raycaster.set(origin, direction);
-        // Intersect with anchor meshes
-        const anchors = Array.from(this.ratk.anchors);
-        const anchorMeshes = anchors.map(a => a.children[0]).filter(Boolean);
-        const intersects = this.raycaster.intersectObjects(anchorMeshes, false);
-        if (intersects.length > 0) {
-            // Find the anchor that owns the mesh
-            const mesh = intersects[0].object;
-            return anchors.find(a => a.children[0] === mesh) || null;
-        }
-        return null;
     }
 }
