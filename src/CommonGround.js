@@ -756,7 +756,11 @@ export class CommonGround {
             if (mode === 'immersive-ar') {
                 init = Object.assign({}, init, {
                     depthSensing: {
-                        usagePreference: ['cpu-optimized'],
+                        // CPU preferred (better range/accuracy); gpu-optimized
+                        // declared as an explicit fallback — runtimes that can
+                        // only grant GPU depth may produce no data at all for
+                        // sessions that never listed it.
+                        usagePreference: ['cpu-optimized', 'gpu-optimized'],
                         dataFormatPreference: ['unsigned-short', 'luminance-alpha'],
                     },
                 });
