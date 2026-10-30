@@ -2,6 +2,8 @@ import {
     DataTexture,
     FloatType,
     RedFormat,
+    RedIntegerFormat,
+    UnsignedShortType,
     ClampToEdgeWrapping,
     NearestFilter,
     Matrix4,
@@ -47,9 +49,14 @@ export class XRDepthOcclusion {
         // filled by _updateInner and pushed into _viewData each frame.
         this._viewSlots = [null, null];
         this._lastBound = null;         // last matched view data from bindUniformsForCamera
-        this._depthTexes = [null, null]; // one R32F texture per eye
+        this._depthTexes = [null, null]; // one depth texture per eye (R16UI or R32F)
         this._threeDepthTexes = [null, null];
-        this._depthFloatBuffers = [null, null]; // pooled float conversion buffers
+        this._depthFloatBuffers = [null, null]; // pooled float conversion buffers (f32 mode)
+        // CPU depth texture mode: 'u16' (raw uint16 upload, shader scales by
+        // rawValueToMeters — no per-pixel JS loop) or 'f32' (JS converts to
+        // float metres, R32F upload — the proven path). Decided once by a
+        // driver probe (_probeUint16DepthPath); null until then.
+        this._cpuTexMode = null;
         this._depthDims  = [null, null]; // {w,h} to detect size changes
         this._xrFramebuffer = null;
         this._cpuUnavailableWarned = false;
@@ -84,6 +91,7 @@ export class XRDepthOcclusion {
             bindingError: null,
             useShaderOcclusion: null,
             enablePrePass: null,
+            cpuTexMode: null,
             eye0: null,
             eye1: null,
         };
@@ -352,41 +360,59 @@ export class XRDepthOcclusion {
             }
 
             // Resize depth texture when dimensions change (usually only once).
-            // R32F float upload: an R16UI integer texture (raw upload, shader-side
-            // scaling) was tried and failed silently on Quest 3 — no occlusion,
-            // no GL error surfaced. Keep the JS conversion loop; it's proven.
             const d = this._depthDims[i];
             if (!d || d.w !== di.width || d.h !== di.height) {
+                const u16 = this._ensureCpuTexMode(gl) === 'u16';
                 gl.bindTexture(gl.TEXTURE_2D, this._depthTexes[i]);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F,
-                    di.width, di.height, 0, gl.RED, gl.FLOAT, null);
+                if (u16) {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI,
+                        di.width, di.height, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, null);
+                } else {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F,
+                        di.width, di.height, 0, gl.RED, gl.FLOAT, null);
+                }
                 this._depthDims[i] = { w: di.width, h: di.height };
 
-                const buf = new Float32Array(di.width * di.height);
-                const tex = new DataTexture(buf, di.width, di.height, RedFormat, FloatType);
+                // Three.js-side texture for custom material sampling. u16 mode:
+                // usampler2D, multiply by uRawToMeters in GLSL (integer textures
+                // require NEAREST filtering). f32 mode: float metres.
+                const tex = u16
+                    ? new DataTexture(
+                        new Uint16Array(di.width * di.height), di.width, di.height,
+                        RedIntegerFormat, UnsignedShortType)
+                    : new DataTexture(
+                        new Float32Array(di.width * di.height), di.width, di.height,
+                        RedFormat, FloatType);
                 tex.minFilter = NearestFilter;
                 tex.magFilter = NearestFilter;
                 tex.wrapS = ClampToEdgeWrapping;
                 tex.wrapT = ClampToEdgeWrapping;
                 tex.generateMipmaps = false;
                 tex.needsUpdate = true;
-                this._depthFloatBuffers[i] = buf;
+                if (!u16) this._depthFloatBuffers[i] = tex.image.data;
                 this._threeDepthTexes[i] = tex;
             }
 
-            // Convert uint16 raw values → float metres (pooled buffer).
-            const raw    = new Uint16Array(di.data);
-            const floats = this._depthFloatBuffers[i];
-            const scale  = di.rawValueToMeters;
-            for (let j = 0; j < raw.length; j++) floats[j] = raw[j] * scale;
+            const raw = new Uint16Array(di.data);
+            gl.bindTexture(gl.TEXTURE_2D, this._depthTexes[i]);
+            if (this._cpuTexMode === 'u16') {
+                // Upload raw uint16 values unchanged — the pre-pass shader scales
+                // by rawValueToMeters. No per-pixel JS conversion loop.
+                this._threeDepthTexes[i].image.data = raw;
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0,
+                    di.width, di.height, gl.RED_INTEGER, gl.UNSIGNED_SHORT, raw);
+            } else {
+                // Convert uint16 raw values → float metres (pooled buffer).
+                const floats = this._depthFloatBuffers[i];
+                const scale  = di.rawValueToMeters;
+                for (let j = 0; j < raw.length; j++) floats[j] = raw[j] * scale;
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0,
+                    di.width, di.height, gl.RED, gl.FLOAT, floats);
+            }
+            gl.bindTexture(gl.TEXTURE_2D, null);
 
             // Keep Three texture in sync for custom material sampling.
             this._threeDepthTexes[i].needsUpdate = true;
-
-            gl.bindTexture(gl.TEXTURE_2D, this._depthTexes[i]);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0,
-                di.width, di.height, gl.RED, gl.FLOAT, floats);
-            gl.bindTexture(gl.TEXTURE_2D, null);
 
             const vp = this._getViewportForView(layer, xrBinding || this._binding, view);
             if (!vp) {
@@ -491,6 +517,56 @@ export class XRDepthOcclusion {
         dbg.rawValueToMeters = rawValueToMeters;
     }
 
+    /** Decide the CPU depth texture mode once, probing the driver first. */
+    _ensureCpuTexMode(gl) {
+        if (this._cpuTexMode) return this._cpuTexMode;
+        this._cpuTexMode = this._probeUint16DepthPath(gl) ? 'u16' : 'f32';
+        this._debug.cpuTexMode = this._cpuTexMode;
+        return this._cpuTexMode;
+    }
+
+    /**
+     * One-shot driver probe for the raw uint16 depth path (R16UI texture +
+     * usampler2D in the pre-pass shader). Quest browser builds have rejected
+     * seemingly valid texture formats before (see XRDepthOverlay's RGBA8
+     * note), and a silent failure here means no occlusion at all — so verify
+     * with a throwaway 1×1 alloc+upload and fall back to the float path on
+     * any error.
+     */
+    _probeUint16DepthPath(gl) {
+        let tex = null;
+        try {
+            tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, null);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1, 1, gl.RED_INTEGER, gl.UNSIGNED_SHORT, new Uint16Array([1]));
+            const err = gl.getError();
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            if (err !== gl.NO_ERROR) {
+                console.warn(`[XRDepthOcclusion] R16UI probe failed (0x${err.toString(16)}) — using float depth upload`);
+                return false;
+            }
+            return true;
+        } catch (e) {
+            console.warn('[XRDepthOcclusion] R16UI probe threw — using float depth upload', e);
+            return false;
+        } finally {
+            if (tex) gl.deleteTexture(tex);
+        }
+    }
+
+    /** Drop all CPU depth textures so they are re-allocated in the current mode. */
+    _resetCpuDepthTextures(gl) {
+        for (let i = 0; i < 2; i++) {
+            if (this._depthTexes[i]) { gl.deleteTexture(this._depthTexes[i]); this._depthTexes[i] = null; }
+            if (this._threeDepthTexes[i]) { this._threeDepthTexes[i].dispose(); this._threeDepthTexes[i] = null; }
+            this._depthDims[i] = null;
+            this._depthFloatBuffers[i] = null;
+        }
+    }
+
     /**
      * Call after update() but BEFORE renderer.render().
      * Draws a fullscreen triangle per eye that writes gl_FragDepth from the
@@ -588,6 +664,9 @@ export class XRDepthOcclusion {
             } else {
                 gl.useProgram(this._program);
                 gl.uniform1i(this._locTex, 0);
+                if (this._locRawToMeters) {
+                    gl.uniform1f(this._locRawToMeters, vd.rawValueToMeters != null ? vd.rawValueToMeters : 1.0);
+                }
                 gl.uniformMatrix4fv(this._locUvXform, false, vd.uvTransform);
                 gl.uniformMatrix4fv(this._locProj,    false, vd.projMatrix);
                 gl.uniformMatrix4fv(this._locProjInv, false, vd.projInvMatrix);
@@ -722,6 +801,12 @@ export class XRDepthOcclusion {
         // GPU-specific float uniforms (no-op when not declared in material.uniforms).
         if (uniforms.uGpuLayer !== undefined)
             uniforms.uGpuLayer.value = best.layerIndex != null ? best.layerIndex : 0;
+        // CPU u16 mode exposes raw uint16 via uDepthTex — custom samplers
+        // multiply by uRawToMeters. In f32 mode the texture holds metres and
+        // this stays 1.0.
+        if (uniforms.uRawToMeters !== undefined)
+            uniforms.uRawToMeters.value = (best.mode === 'cpu' && this._cpuTexMode === 'u16' && best.rawValueToMeters != null)
+                ? best.rawValueToMeters : 1.0;
         if (uniforms.uGpuRangeMeters !== undefined)
             uniforms.uGpuRangeMeters.value = this._gpuRangeMetersShader;
         if (uniforms.uProj !== undefined)
@@ -768,11 +853,15 @@ export class XRDepthOcclusion {
 
         // Fragment shader: sample perpendicular eye-space depth, project to NDC, write gl_FragDepth.
         // Quest 3 CPU depth (rawValueToMeters-scaled uint16) is perpendicular depth, not ray distance —
-        // no slant correction needed, same as the GPU path. The texture holds
-        // float metres (converted at upload; see _updateInner).
+        // no slant correction needed, same as the GPU path.
+        // u16 mode: the texture holds raw uint16 values, scaled here by
+        // uRawToMeters (no per-pixel JS conversion). f32 mode: float metres.
+        const u16 = this._ensureCpuTexMode(gl) === 'u16';
         const fs = `#version 300 es
             precision highp float;
-            uniform sampler2D uTex;
+            ${u16
+                ? 'uniform highp usampler2D uTex;\n            uniform float uRawToMeters;'
+                : 'uniform sampler2D uTex;'}
             uniform mat4 uProj;
             uniform mat4 uProjInv;
             uniform mat4 uViewInv;
@@ -785,7 +874,9 @@ export class XRDepthOcclusion {
             in vec2 vViewUv;
             out vec4 fragColor;
             void main() {
-                float metres = texture(uTex, vUv).r;
+                ${u16
+                    ? 'float metres = float(texture(uTex, vUv).r) * uRawToMeters;'
+                    : 'float metres = texture(uTex, vUv).r;'}
                 if (metres < 0.05) discard;
                 if (uUseFloorClear > 0.5 || uClearBoxCount > 0) {
                     vec2 ndc = vViewUv * 2.0 - 1.0;
@@ -836,11 +927,21 @@ export class XRDepthOcclusion {
             if (!gl.getProgramParameter(this._program, gl.LINK_STATUS))
                 throw new Error(gl.getProgramInfoLog(this._program));
         } catch (e) {
+            if (u16) {
+                // Integer-texture shader rejected — drop to the proven float
+                // path and rebuild the depth textures to match.
+                console.warn('[XRDepthOcclusion] uint16 pre-pass shader failed, falling back to float:', e);
+                this._cpuTexMode = 'f32';
+                this._debug.cpuTexMode = 'f32';
+                this._resetCpuDepthTextures(gl);
+                return this._init(gl);
+            }
             console.warn('[XRDepthOcclusion] shader error:', e);
             return false;
         }
 
         this._locTex     = gl.getUniformLocation(this._program, 'uTex');
+        this._locRawToMeters = u16 ? gl.getUniformLocation(this._program, 'uRawToMeters') : null;
         this._locUvXform = gl.getUniformLocation(this._program, 'uUvXform');
         this._locProj    = gl.getUniformLocation(this._program, 'uProj');
         this._locProjInv = gl.getUniformLocation(this._program, 'uProjInv');
