@@ -89,6 +89,7 @@ export class XRDepthOcclusion {
         this._mvGpuLoc = null;
         this._readyMVGpu = false;
         this._mvGpuWarned = false;
+        this._mvShaderWarned = false;
         this._mvError = null;
         this._tmpMat4 = new Matrix4();
         // 1×1 placeholder so uDepthTex is never null (avoids "no texture on unit 0" warning).
@@ -1033,7 +1034,14 @@ export class XRDepthOcclusion {
         // When pre-pass is enabled, depth testing in the pipeline is the
         // source of truth. Disable per-fragment shader discard to avoid
         // double-occlusion artifacts and unstable range behavior.
-        const useShaderOcclusion = !this._enablePrePass;
+        // Shader-mode occlusion is also disabled under multiview: the eye is
+        // picked from the GL viewport x offset, which never changes in a
+        // multiview render — both eyes would be occluded with eye-0 depth.
+        const useShaderOcclusion = !this._enablePrePass && this.renderer.xr.isMultiview !== true;
+        if (!this._enablePrePass && this.renderer.xr.isMultiview === true && !this._mvShaderWarned) {
+            this._mvShaderWarned = true;
+            console.warn('[XRDepthOcclusion] shader-mode occlusion is not multiview-aware — disabled. Use occlusionMode "prepass".');
+        }
         uniforms.uHasDepth.value = useShaderOcclusion ? 1 : 0;
         this._debug.useShaderOcclusion = useShaderOcclusion;
         this._debug.enablePrePass = this._enablePrePass;
