@@ -43,6 +43,15 @@ export class XRDepthOcclusion {
         this._prePassBiasMeters = 0.015; // small bias to avoid depth fighting at surfaces
         this._binding   = null;
         this._session   = null;
+        // CPU-depth lockout: when the runtime serves GPU depth but the CPU
+        // call keeps throwing (multiview sessions on Quest behave this way),
+        // stop paying for two exception throws per frame. Locked for the
+        // session once GPU depth is proven; resets on session change.
+        this._cpuFailStreak = 0;
+        this._cpuDepthLocked = false;
+        // Per-eye GPU view info (viewport/layer/framebuffer) — constant for
+        // the session, so fetched once instead of 4 XR binding calls/frame.
+        this._gpuViewInfo = [null, null];
         this._viewData  = [];           // populated by update(), consumed by renderPrePass()
         // Pooled per-eye slots (max 2 XR views) with reusable typed-array
         // matrices, so the per-frame update allocates nothing. Slots are
@@ -267,6 +276,9 @@ export class XRDepthOcclusion {
             this._session = frame.session;
             this._binding = null;
             this._cpuUnavailableWarned = false;
+            this._cpuFailStreak = 0;
+            this._cpuDepthLocked = false;
+            this._gpuViewInfo = [null, null];
         }
 
         const layer = this.renderer.xr.getBaseLayer() || frame.session.renderState.baseLayer || null;
@@ -312,12 +324,15 @@ export class XRDepthOcclusion {
         for (let i = 0; i < pose.views.length && i < 2; i++) {
             const view = pose.views[i];
 
-            // Try CPU first (best range ~5m+), regardless of session grant preference.
+            // Try CPU first (best range ~5m+), regardless of session grant
+            // preference — unless locked out for this session (see below).
             let di = null;
-            try {
-                di = frame.getDepthInformation(view);
-            } catch (e) {
-                di = null;
+            if (!this._cpuDepthLocked) {
+                try {
+                    di = frame.getDepthInformation(view);
+                } catch (e) {
+                    di = null;
+                }
             }
 
             if (!di) {
@@ -344,25 +359,35 @@ export class XRDepthOcclusion {
                     continue;
                 }
 
-                const vp = this._getViewportForView(layer, xrBinding || this._binding, view);
-                if (!vp) {
-                    this._debug.reason = `view${i}-gpu-no-viewport`;
-                    continue;
-                }
-                const subImage = this._getViewSubImage(layer, xrBinding || this._binding, view);
-                const texLayer = (subImage && Number.isFinite(subImage.imageIndex))
-                    ? subImage.imageIndex : 0;
-                let fb = this._xrFramebuffer;
-                if (!fb) {
-                    fb = subImage ? subImage.framebuffer || null : null;
+                // Viewport/layer/framebuffer are constant for the session —
+                // fetch the XR binding objects once per eye, not per frame.
+                let info = this._gpuViewInfo[i];
+                if (!info) {
+                    const vp = this._getViewportForView(layer, xrBinding || this._binding, view);
+                    if (!vp) {
+                        this._debug.reason = `view${i}-gpu-no-viewport`;
+                        continue;
+                    }
+                    const subImage = this._getViewSubImage(layer, xrBinding || this._binding, view);
+                    const texLayer = (subImage && Number.isFinite(subImage.imageIndex))
+                        ? subImage.imageIndex : 0;
+                    let fb = this._xrFramebuffer;
+                    if (!fb) {
+                        fb = subImage ? subImage.framebuffer || null : null;
+                    }
+                    info = this._gpuViewInfo[i] = {
+                        vp: { x: vp.x, y: vp.y, width: vp.width, height: vp.height },
+                        texLayer,
+                        fb,
+                    };
                 }
                 this._viewData.push(this._fillViewSlot(
                     i, 'gpu', gdi.texture, null,
-                    gdi.normDepthBufferFromNormView.matrix, view, texLayer,
-                    gdi.rawValueToMeters, fb, vp,
+                    gdi.normDepthBufferFromNormView.matrix, view, info.texLayer,
+                    gdi.rawValueToMeters, info.fb, info.vp,
                 ));
 
-                this._fillDebugEye(i, gdi.width, gdi.height, vp, gdi.rawValueToMeters);
+                this._fillDebugEye(i, gdi.width, gdi.height, info.vp, gdi.rawValueToMeters);
                 continue;
             }
 
@@ -448,6 +473,22 @@ export class XRDepthOcclusion {
             ));
 
             this._fillDebugEye(i, di.width, di.height, vp, di.rawValueToMeters);
+        }
+
+        // CPU-depth lockout: GPU depth flowing while the CPU call keeps
+        // failing means this session won't serve CPU depth (multiview
+        // sessions on Quest) — stop paying for per-eye exception throws.
+        // Never locks while neither path flows, so late-arriving depth on
+        // CPU-only sessions is unaffected.
+        if (!this._cpuDepthLocked && pose.views.length > 0) {
+            const cpuOk = this._viewData.some((vd) => vd.mode === 'cpu');
+            const gpuOk = this._viewData.some((vd) => vd.mode === 'gpu');
+            if (cpuOk || !gpuOk) {
+                this._cpuFailStreak = 0;
+            } else if (++this._cpuFailStreak >= 30) {
+                this._cpuDepthLocked = true;
+                console.log('[XRDepthOcclusion] CPU depth failing while GPU depth flows — locking to the GPU path for this session');
+            }
         }
 
         this._debug.views = this._viewData.length;
