@@ -235,12 +235,14 @@ export class CommonGround {
         if (!this._socketConnectionPromise) {
             // Wait for display-mode detection (_setupARButton during init):
             // only actual headsets put their deviceId in the handshake.
-            // Apps that never call init() never resolve this — they render
-            // nothing and have no use for the socket.
-            this._socketConnectionPromise = this._whenModeKnown
+            // Spectator clients (clientRole set, e.g. a screen page) are
+            // never headsets and typically never call init(), so they
+            // connect immediately without a deviceId.
+            const ready = this._clientRole ? Promise.resolve() : this._whenModeKnown;
+            this._socketConnectionPromise = ready
                 .then(() => createSocketConnection({
                     socketPath: this._socketPath,
-                    deviceId: this.isDesktopMode ? null : this._deviceId,
+                    deviceId: (this._clientRole || this.isDesktopMode) ? null : this._deviceId,
                     clientRole: this._clientRole,
                 }));
         }
