@@ -802,6 +802,29 @@ export class CommonGround {
                 arButton.innerHTML = this._buttonText ?? 'ENTER COMMONGROUND';
             }
         });
+
+        this._patchARButtonForLongPress(arButton);
+    }
+
+    // Quest's Chromium cancels the click event after a long press (a slow
+    // trigger pull), silently dropping the enter-AR tap. Fire the button on
+    // pointerdown instead, and swallow the trusted click the browser still
+    // synthesizes on a quick tap so the handler doesn't run twice.
+    _patchARButtonForLongPress(arButton) {
+        arButton.style.touchAction = 'none';
+        let lastPressAt = 0;
+        arButton.addEventListener('pointerdown', () => {
+            const now = performance.now();
+            if (now - lastPressAt < 500) return;
+            lastPressAt = now;
+            arButton.click();
+        });
+        arButton.addEventListener('click', (event) => {
+            if (event.isTrusted && performance.now() - lastPressAt < 500) {
+                event.stopImmediatePropagation();
+            }
+        }, true);
+        arButton.addEventListener('contextmenu', (event) => event.preventDefault());
     }
 
     _setupScene() {
