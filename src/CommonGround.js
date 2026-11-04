@@ -626,6 +626,9 @@ export class CommonGround {
         this._helpersVisible = Boolean(visible);
         if (this.vrControlPanel && this.vrControlPanel.callbacks) {
             this.vrControlPanel.callbacks.toggleHelpers(this._helpersVisible);
+            // Keep the in-VR 'Show Helpers' toggle in sync when the state is
+            // set programmatically (admin-mode default, desktop HUD, ...).
+            this.vrControlPanel.setToggleState('Show Helpers', this._helpersVisible);
         }
     }
 
@@ -981,8 +984,10 @@ export class CommonGround {
     _applyInitialConfig() {
         const { roomMesh, helpers, menu } = this._initialConfig;
         if (!roomMesh) this.setRoomMeshVisible(false);
-        this.setHelpersVisible(Boolean(helpers));
-        if (!menu && !this.isDesktopMode) {
+        // Admin mode opens the VR menu and enables helpers by default,
+        // overriding configure() — it is the setup/inspection mode.
+        this.setHelpersVisible(this._adminModeEnabled || Boolean(helpers));
+        if (!menu && !this._adminModeEnabled && !this.isDesktopMode) {
             this.vrControlPanel.setVisible(false, true);
         }
     }

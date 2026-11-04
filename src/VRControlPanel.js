@@ -394,6 +394,18 @@ export class VRControlPanel {
     }
 
     /**
+     * Set a toggle's visual state by label without firing its callback.
+     * Used when the state changes programmatically (e.g. admin-mode
+     * defaults) so the toggle UI stays in sync.
+     */
+    setToggleState(label, state) {
+        const toggle = this.controls.find(
+            (control) => control instanceof VRToggle && control.label === label,
+        );
+        if (toggle) toggle.setState(Boolean(state));
+    }
+
+    /**
      * Add a button to the panel
      */
     addButton(label, callback = null) {
