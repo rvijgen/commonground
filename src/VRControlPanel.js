@@ -177,20 +177,6 @@ export class VRControlPanel {
                 console.log('Helpers visibility toggled:', state);
             });
 
-            vrControlPanel.addButton('Export Mesh', async () => {
-                try {
-                    console.log('Starting room mesh export...');
-                    const result = await vrControlPanel.callbacks.exportRoomMesh();
-                    if (result.error) {
-                        console.error('Room mesh export failed:', result.error);
-                    } else {
-                        console.log('Room mesh export completed:', result);
-                    }
-                } catch (error) {
-                    console.error('Room mesh export failed:', error);
-                }
-            });
-
             vrControlPanel.addButton('Save Anchors', async () => {
                 console.log('Saving scene/control-panel anchors to server...');
                 vrControlPanel.showStatusMessage('Saving anchors...', 'info');
@@ -744,24 +730,6 @@ export class VRControlPanel {
             this.callbacks.debugScene();
         });
         this.desktopOverlay.appendChild(debugSceneBtn);
-
-        // Export Room Mesh Button (only show in VR mode)
-        if (!this.isDesktopMode) {
-            const exportBtn = this.createDesktopButton('Export Room Mesh', async () => {
-                try {
-                    console.log('Starting room mesh export...');
-                    const result = await this.callbacks.exportRoomMesh();
-                    if (result.error) {
-                        console.error('Room mesh export failed:', result.error);
-                    } else {
-                        console.log('Room mesh export completed:', result);
-                    }
-                } catch (error) {
-                    console.error('Room mesh export failed:', error);
-                }
-            });
-            this.desktopOverlay.appendChild(exportBtn);
-        }
 
         // Show the overlay
         this.setVisible(true);
