@@ -456,6 +456,20 @@ export class ControllerManager {
     }
 
     /**
+     * Distance from the controller to the visible VR control panel, or null
+     * when the beam misses it (or the panel is hidden). Apps use this to
+     * suppress their own beam interactions while the panel is targeted.
+     */
+    beamPanelDistance(controller) {
+        if (!this.vrControlPanel || !this.vrControlPanel.getPanel()?.visible) return null;
+        return this.vrControlPanel.beamPanelDistance(controller);
+    }
+
+    isBeamOnPanel(controller) {
+        return this.beamPanelDistance(controller) != null;
+    }
+
+    /**
      * Get the left controller instance
      */
     getLeftController() {
