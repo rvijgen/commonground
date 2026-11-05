@@ -543,6 +543,19 @@ export class VRControlPanel {
     }
 
     /**
+     * True when the controller beam hits any part of the panel (background,
+     * title bar or controls). Used to consume select events so they don't
+     * fall through to app content behind the panel.
+     */
+    isBeamOnPanel(controller) {
+        if (!this.panel || !this.panel.visible || !controller) return false;
+        const origin = new Vector3().setFromMatrixPosition(controller.matrixWorld);
+        const direction = new Vector3(0, 0, -1).transformDirection(controller.matrixWorld);
+        this.raycaster.set(origin, direction);
+        return this.raycaster.intersectObject(this.panel, true).length > 0;
+    }
+
+    /**
      * Handle controller release events
      */
     handleControllerRelease(controller) {

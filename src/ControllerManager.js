@@ -271,6 +271,18 @@ export class ControllerManager {
                 } else {
                     console.log('Interacted with panel button');
                 }
+                // The panel consumed this select: keep it from app-level
+                // listeners (tile grabbing etc. behind the panel). Works
+                // because these listeners attach during init(), before any
+                // app-level controller listeners.
+                event?.stopImmediatePropagation?.();
+                return;
+            }
+            // Hitting the panel body (no control under the beam) still
+            // consumes the event — the beam must not act through the panel.
+            if (this.vrControlPanel.isBeamOnPanel(controller)) {
+                this.isPointingAtPanel = true;
+                event?.stopImmediatePropagation?.();
                 return;
             }
         }
@@ -300,6 +312,11 @@ export class ControllerManager {
         // Release scene grab
         if (this.sceneManager && !this.vrControlPanel?.isGrabbed) {
             this.sceneManager.stopGrab(this.ratk);
+        }
+        // Match the consumed selectstart: keep the release from app-level
+        // listeners too.
+        if (this.isPointingAtPanel) {
+            event?.stopImmediatePropagation?.();
         }
         this.isPointingAtPanel = false;
 
