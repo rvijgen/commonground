@@ -47,6 +47,9 @@ npm run demo
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — free for noncommercial use with attribution. See [LICENSE](LICENSE).
+MIT — free to use, modify and distribute, including for commercial purposes.
+Please keep the copyright notice. See [LICENSE](LICENSE).
+"Commonground" is a name of Studio Richard Vijgen. Modified versions may be
+distributed, but not under the name Commonground without permission.
 
-Commonground is developed by Studio Richard Vijgen as part of HEFT (Heritage for the Future), supported by Creative Industries Fund NL through the Artistic & Design Research for Immersive Experiences (ADRIE) programme.
+Copyright (c) 2026 Studio Richard Vijgen
