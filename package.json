@@ -2,7 +2,7 @@
 	"name": "commonground",
 	"version": "1.0.0",
 	"description": "WebXR CommonGround library with room-aware scene placement and persistence",
-	"license": "SEE LICENSE IN LICENSE",
+	"license": "MIT",
 	"author": "Richard Vijgen",
 	"repository": {
 		"type": "git",
